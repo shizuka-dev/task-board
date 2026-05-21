@@ -45,8 +45,13 @@ async function hashPassword(pw) {
 // ── Persistence ───────────────────────────────────────────────────────────────
 async function loadState(dateCols) {
   try {
-    const { data, error } = await _sb.from("todos").select("data").eq("id", DB_ROW_ID).single();
-    if (error || !data) return null;
+    const { data, error } = await _sb.from("todos").select("data, password_hash").eq("id", DB_ROW_ID).single();
+    if (error) {
+      if (error.code === "PGRST116") return null;
+      console.error("loadState DB error:", error);
+      return { loadError: true };
+    }
+    if (!data) return null;
     const s = data.data;
     const now = Date.now();
     return {
@@ -56,9 +61,12 @@ async function loadState(dateCols) {
       doneIds:      new Set(s.doneIds ?? []),
       routines:     s.routines ?? [],
       trash:        (s.trash ?? []).filter(t => now - t.deletedAt < THREE_DAYS),
-      passwordHash: s.passwordHash ?? null,
+      passwordHash: data.password_hash ?? null, // 別カラムから取得
     };
-  } catch { return null; }
+  } catch(e) {
+    console.error("loadState exception:", e);
+    return { loadError: true };
+  }
 }
 
 let _saveTimer = null;
@@ -70,7 +78,8 @@ function saveState(state, dateCols, onError) {
       dateCols.forEach((d,i) => { amByDate[d.toDateString()] = state.amCols[i]; pmByDate[d.toDateString()] = state.pmCols[i]; });
       await _sb.from("todos").upsert({
         id: DB_ROW_ID,
-        data: { inbox: state.inbox, amByDate, pmByDate, doneIds: [...state.doneIds], routines: state.routines, trash: state.trash, passwordHash: state.passwordHash, savedAt: Date.now() },
+        password_hash: state.passwordHash ?? null, // 別カラムに保存
+        data: { inbox: state.inbox, amByDate, pmByDate, doneIds: [...state.doneIds], routines: state.routines, trash: state.trash, savedAt: Date.now() },
         updated_at: new Date().toISOString(),
       });
     } catch(e) {
@@ -85,15 +94,6 @@ const PINK = "#d4457a", PINK_LIGHT = "#fce8f1", PINK_TEXT = "#b03468";
 const AM_BG = "#f2faf2", AM_BORDER = "#8ed08e", AM_ACCENT = "#3a9e3a", AM_LIGHT = "#e4f5e4", AM_TEXT = "#2a6e2a", AM_HEAD = "#2e8c2e";
 const PM_BG = "#fff6ee", PM_BORDER = "#f5a55a", PM_ACCENT = "#e06010", PM_LIGHT = "#feebd8", PM_TEXT = "#a04010", PM_HEAD = "#d05c10";
 const FONT_STYLE = { fontFamily: "'Noto Sans JP', 'Hiragino Sans', sans-serif" };
-// 共通スタイル定数
-const STYLES = {
-  label:      { fontSize:11, fontWeight:700, color:"#aaa" },
-  sectionTitle:{ fontSize:13, fontWeight:700, color:"#333" },
-  cardBase:   { background:"#fff", border:"1.5px solid #e2e2e2", borderRadius:14, padding:"16px 18px", marginBottom:14 },
-  btnPrimary: { ...FONT_STYLE, width:"100%", padding:"11px", background:"#0d0d0d", color:"#fff", fontWeight:700, fontSize:13, borderRadius:8, border:"none", cursor:"pointer" },
-  btnCancel:  { ...FONT_STYLE, flex:1, padding:12, borderRadius:8, fontSize:14, fontWeight:700, background:"#f5f5f5", border:"1.5px solid #e0e0e0", color:"#666", cursor:"pointer" },
-  btnSave:    { ...FONT_STYLE, flex:2, padding:12, borderRadius:8, fontSize:14, fontWeight:700, background:"#0d0d0d", border:"none", color:"#fff", cursor:"pointer" },
-};
 const DAYS_JP = ["日","月","火","水","木","金","土"];
 
 function getDateColumns() {
@@ -121,42 +121,50 @@ function routineLabel(r) {
 
 // ── Natural Language Parser ───────────────────────────────────────────────────
 const DAY_MAP = {"日曜日":0,"日曜":0,"月曜日":1,"月曜":1,"火曜日":2,"火曜":2,"水曜日":3,"水曜":3,"木曜日":4,"木曜":4,"金曜日":5,"金曜":5,"土曜日":6,"土曜":6,"日":0,"月":1,"火":2,"水":3,"木":4,"金":5,"土":6};
+// ソート済みキーをモジュールトップで一度だけ計算（parseLine呼び出しごとの再計算を防ぐ）
+const DAY_MAP_KEYS = Object.keys(DAY_MAP).sort((a,b) => b.length-a.length);
 function extractDays(str) {
-  const days = [], keys = Object.keys(DAY_MAP).sort((a,b) => b.length-a.length);
+  const days = [];
   let rem = str;
   while (rem.length > 0) {
-    const k = keys.find(k => rem.startsWith(k));
+    const k = DAY_MAP_KEYS.find(k => rem.startsWith(k));
     if (k) { if (!days.includes(DAY_MAP[k])) days.push(DAY_MAP[k]); rem = rem.slice(k.length).replace(/^[・,、\s]+/,""); }
     else rem = rem.slice(1);
   }
   return days;
 }
 function parseLine(raw) {
-  let line = raw.trim(); if (!line) return null;
-  let routine = null, slotHint = null;
+  try {
+    let line = raw.trim(); if (!line) return null;
+    let routine = null, slotHint = null;
 
-  if (/^(AM|午前)\s*/i.test(line)) { slotHint="am"; line=line.replace(/^(AM|午前)\s*/i,""); }
-  else if (/^(PM|午後)\s*/i.test(line)) { slotHint="pm"; line=line.replace(/^(PM|午後)\s*/i,""); }
+    if (/^(AM|午前)\s*/i.test(line)) { slotHint="am"; line=line.replace(/^(AM|午前)\s*/i,""); }
+    else if (/^(PM|午後)\s*/i.test(line)) { slotHint="pm"; line=line.replace(/^(PM|午後)\s*/i,""); }
 
-  if (/(今日|本日)/.test(line)) { routine={type:"relative",offset:0}; line=line.replace(/(今日|本日)/g,""); }
-  else if (/明後々日|明々後日/.test(line)) { routine={type:"relative",offset:3}; line=line.replace(/明後々日|明々後日/g,""); }
-  else if (/明後日/.test(line)) { routine={type:"relative",offset:2}; line=line.replace(/明後日/g,""); }
-  else if (/明日/.test(line)) { routine={type:"relative",offset:1}; line=line.replace(/明日/g,""); }
+    if (/(今日|本日)/.test(line)) { routine={type:"relative",offset:0}; line=line.replace(/(今日|本日)/g,""); }
+    else if (/明後々日|明々後日/.test(line)) { routine={type:"relative",offset:3}; line=line.replace(/明後々日|明々後日/g,""); }
+    else if (/明後日/.test(line)) { routine={type:"relative",offset:2}; line=line.replace(/明後日/g,""); }
+    else if (/明日/.test(line)) { routine={type:"relative",offset:1}; line=line.replace(/明日/g,""); }
 
-  if (!routine && /毎日/.test(line)) { routine={type:"daily"}; line=line.replace(/毎日/g,""); }
-  if (!routine) { const m=line.match(/毎月\s*(\d{1,2})\s*日?/); if(m){routine={type:"monthly",day:+m[1]};line=line.replace(m[0],"");} }
-  if (!routine) { const m=line.match(/(\d{1,2})[\/\-](\d{1,2})/)||line.match(/(\d{1,2})月(\d{1,2})日/); if(m){routine={type:"date",month:+m[1],day:+m[2]};line=line.replace(m[0],"");} }
-  if (!routine) { const m=line.match(/毎週\s*([^\s,、。\d]+)/); if(m){const d=extractDays(m[1]);if(d.length){routine={type:"weekly",days:d.sort()};line=line.replace(m[0],"");}}}
-  if (!routine) { const m=line.match(/毎([月火水木金土日][曜日]?(?:[・,、]?[月火水木金土日][曜日]?)*)/); if(m){const d=extractDays(m[1]);if(d.length){routine={type:"weekly",days:d.sort()};line=line.replace(m[0],"");}}}
+    if (!routine && /毎日/.test(line)) { routine={type:"daily"}; line=line.replace(/毎日/g,""); }
+    if (!routine) { const m=line.match(/毎月\s*(\d{1,2})\s*日?/); if(m){routine={type:"monthly",day:+m[1]};line=line.replace(m[0],"");} }
+    if (!routine) { const m=line.match(/(\d{1,2})[\/\-](\d{1,2})/)||line.match(/(\d{1,2})月(\d{1,2})日/); if(m){routine={type:"date",month:+m[1],day:+m[2]};line=line.replace(m[0],"");} }
+    if (!routine) { const m=line.match(/毎週\s*([^\s,、。\d]+)/); if(m){const d=extractDays(m[1]);if(d.length){routine={type:"weekly",days:d.sort()};line=line.replace(m[0],"");}}}
+    if (!routine) { const m=line.match(/毎([月火水木金土日][曜日]?(?:[・,、]?[月火水木金土日][曜日]?)*)/); if(m){const d=extractDays(m[1]);if(d.length){routine={type:"weekly",days:d.sort()};line=line.replace(m[0],"");}}}
 
-  if (!slotHint) {
-    if (/(^|\s)(AM|午前)(\s|$)/i.test(line)) { slotHint="am"; line=line.replace(/(^|\s)(AM|午前)(\s|$)/ig," "); }
-    else if (/(^|\s)(PM|午後)(\s|$)/i.test(line)) { slotHint="pm"; line=line.replace(/(^|\s)(PM|午後)(\s|$)/ig," "); }
+    if (!slotHint) {
+      if (/(^|\s)(AM|午前)(\s|$)/i.test(line)) { slotHint="am"; line=line.replace(/(^|\s)(AM|午前)(\s|$)/ig," "); }
+      else if (/(^|\s)(PM|午後)(\s|$)/i.test(line)) { slotHint="pm"; line=line.replace(/(^|\s)(PM|午後)(\s|$)/ig," "); }
+    }
+
+    line = line.replace(/[,、。・]+/g," ").replace(/\s+/g," ").trim();
+    if (!line) return null;
+    return { text:line, routine, slotHint };
+  } catch(e) {
+    console.warn("parseLine error:", e, raw);
+    const text = raw.trim();
+    return text ? { text, routine:null, slotHint:null } : null;
   }
-
-  line = line.replace(/[,、。・]+/g," ").replace(/\s+/g," ").trim();
-  if (!line) return null;
-  return { text:line, routine, slotHint };
 }
 function previewLines(raw) { return raw.split("\n").map(l => ({ original:l, parsed:parseLine(l) })); }
 
@@ -186,7 +194,15 @@ function autoGenerateFromDefinitions(amCols, pmCols, routines, dateCols) {
       const di=+m[1], isAm=m[2]==="am";
       const col = isAm ? newAm[di] : newPm[di];
       if (col.some(t => t.routineDefId===def.id)) return;
-      const task = stampTodo({ ...def, id:genId(), routineDefId:def.id, lastCheckedAt:null, createdAt:Date.now() });
+      const task = stampTodo({
+        id: genId(),
+        text: def.text,
+        routine: def.routine,
+        slotHint: def.slotHint,
+        routineDefId: def.id,
+        lastCheckedAt: null,
+        createdAt: Date.now(),
+      });
       if (isAm) newAm[di]=[...newAm[di],task]; else newPm[di]=[...newPm[di],task];
     });
   });
@@ -352,8 +368,8 @@ function TodoCard({ todo, isDone, isAm, onEdit, onDelete, onToggle, onTouchStart
           {lbl && <span style={{...FONT_STYLE,fontSize:10,fontWeight:700,color:ct,background:cb,borderRadius:4,padding:"2px 8px",display:"inline-block",marginTop:5}}>🔁 {lbl}</span>}
         </div>
         <div style={{display:"flex",gap:2,flexShrink:0}}>
-          <button onClick={()=>onEdit(todo)} style={{background:"none",border:"none",color:"#bbb",cursor:"pointer",padding:"4px 6px",fontSize:14}}>✏️</button>
-          <button onClick={()=>onDelete(todo.id)} style={{background:"none",border:"none",color:"#bbb",cursor:"pointer",padding:"4px 6px",fontSize:14}}>🗑</button>
+          <button onClick={e=>{e.stopPropagation();onEdit(todo)}} style={{background:"none",border:"none",color:"#bbb",cursor:"pointer",padding:"4px 6px",fontSize:14}}>✏️</button>
+          <button onClick={e=>{e.stopPropagation();onDelete(todo.id)}} style={{background:"none",border:"none",color:"#bbb",cursor:"pointer",padding:"4px 6px",fontSize:14}}>🗑</button>
         </div>
       </div>
     </div>
@@ -431,7 +447,8 @@ function InboxColumn({ todos, doneIds, onEdit, onDelete, onToggle, onAdd, onDrag
 
 function QuickEntry({ onAdd, dateCols }) {
   const [text,setText]=useState(""), [focused,setFocused]=useState(false);
-  const previews=previewLines(text), valid=previews.filter(p=>p.parsed);
+  const previews = useMemo(() => previewLines(text), [text]);
+  const valid = useMemo(() => previews.filter(p=>p.parsed), [previews]);
   const destLabel = (parsed) => {
     if (!parsed) return null;
     const ids=resolveColIds(parsed,dateCols);
@@ -443,8 +460,11 @@ function QuickEntry({ onAdd, dateCols }) {
     }
     return { text:`→ ${ids.length}日分 ${slot?"🌱AM":"☀️PM"}`, bg:slot?AM_LIGHT:PM_LIGHT, color:slot?AM_TEXT:PM_TEXT };
   };
+  const { ic, dc } = useMemo(() => {
+    const ic = valid.filter(p=>!resolveColIds(p.parsed,dateCols)?.length).length;
+    return { ic, dc: valid.length - ic };
+  }, [valid, dateCols]);
   const submit = () => { if (!valid.length) return; onAdd(valid.map(p=>({id:genId(),...p.parsed}))); setText(""); };
-  const ic=valid.filter(p=>!resolveColIds(p.parsed,dateCols)?.length).length, dc=valid.length-ic;
   const btnLabel = ic>0&&dc>0 ? `${dc}件を直接追加・${ic}件をストックへ` : dc>0 ? `${dc}件を直接ボードに追加` : `${ic}件をストックに追加`;
   return (
     <div style={{...FONT_STYLE,background:"#fff",border:`1.5px solid ${focused?PINK:"#d8d8d8"}`,borderRadius:12,padding:"14px 16px",marginBottom:12,boxShadow:focused?`0 0 0 3px ${PINK_LIGHT}`:"0 1px 3px rgba(0,0,0,.06)"}}>
@@ -481,10 +501,34 @@ function QuickEntry({ onAdd, dateCols }) {
 // ── Genre & AI (Weekly Review) ────────────────────────────────────────────────
 const GENRES=[{key:"work",label:"💼 仕事",color:"#2563b0",bg:"#e8f0fe"},{key:"home",label:"🏠 家事",color:"#b07020",bg:"#fef3e0"},{key:"health",label:"💪 健康",color:"#2a7a3a",bg:"#e4f5e4"},{key:"learn",label:"📚 学習",color:"#7030b0",bg:"#f3e8ff"},{key:"errand",label:"🛒 用事",color:"#c04060",bg:"#fce8f1"},{key:"other",label:"📌 その他",color:"#606060",bg:"#f0f0f0"}];
 const genreInfo = key => GENRES.find(g=>g.key===key) ?? GENRES[GENRES.length-1];
+// ルーティン同一性比較（JSON.stringifyのキー順序問題を回避）
+function sameRoutine(a, b) {
+  if (!a || !b) return false;
+  if (a.type !== b.type) return false;
+  if (a.type === "weekly") return JSON.stringify([...a.days].sort()) === JSON.stringify([...b.days].sort());
+  if (a.type === "monthly") return a.day === b.day;
+  if (a.type === "date") return a.month === b.month && a.day === b.day;
+  return true; // daily
+}
+
 async function aiRequest(prompt) {
-  const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})});
-  const data=await res.json();
-  return data.content?.map(c=>c.text||"").join("")||"";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000); // 30秒タイムアウト
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000, messages:[{role:"user",content:prompt}] })
+    });
+    const data = await res.json();
+    return data.content?.map(c=>c.text||"").join("") || "";
+  } catch(e) {
+    if (e.name === "AbortError") throw new Error("AIリクエストがタイムアウトしました");
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 async function classifyGenres(todos) {
   if (!todos.length) return {};
@@ -984,15 +1028,20 @@ function App() {
 
   useEffect(()=>{
     loadState(dateCols).then(s => {
+      if (s?.loadError) {
+        setAuthError("データの読み込みに失敗しました。再読み込みしてください。");
+        setLoaded(true);
+        return;
+      }
       if (s) {
         const savedRoutines=s.routines||[];
         const {amCols:newAm,pmCols:newPm}=autoGenerateFromDefinitions(s.amCols,s.pmCols,savedRoutines,dateCols);
         setInbox(s.inbox); setAmCols(newAm); setPmCols(newPm); setDoneIds(s.doneIds); setRoutines(savedRoutines); setTrash(s.trash||[]);
         setSavedHash(s.passwordHash||null); setIsNewUser(!s.passwordHash);
-      if (urlUser==="main") { setAuthed(true); } // mainはパスワードなし
+        if (urlUser==="main") { setAuthed(true); }
       } else {
         setIsNewUser(true);
-        if (urlUser==="main") setAuthed(true); // mainはパスワードなし
+        if (urlUser==="main") setAuthed(true);
       }
       setLoaded(true);
     });
@@ -1074,7 +1123,7 @@ function App() {
       const isRtn=s.routine?.type==="weekly"||s.routine?.type==="daily"||s.routine?.type==="monthly";
       const colIds=resolveColIds(s,dateCols);
       if (isRtn) {
-        const exists=newRoutines.some(r=>r.text===s.text&&JSON.stringify(r.routine)===JSON.stringify(s.routine));
+        const exists=newRoutines.some(r=>r.text===s.text && sameRoutine(r.routine, s.routine));
         if (!exists) {
           const def={id:genId(),text:s.text,routine:s.routine,slotHint:s.slotHint||"am",active:true,expiresAt:null};
           newRoutines=[...newRoutines,def];
@@ -1113,8 +1162,14 @@ function App() {
     }
   };
 
-  const allTodos=[...inbox,...amCols.flat(),...pmCols.flat()];
-  const overdueCnt=allTodos.filter(t=>isOverdue(t,doneIds)).length;
+  const allTodos = useMemo(() =>
+    [...inbox, ...amCols.flat(), ...pmCols.flat()],
+    [inbox, amCols, pmCols]
+  );
+  const overdueCnt = useMemo(() =>
+    allTodos.filter(t=>isOverdue(t,doneIds)).length,
+    [allTodos, doneIds]
+  );
   const accents=[PINK,"#c9437a","#be4280","#b34186","#a8408c","#9e3f8e","#934090"];
   const sp={doneIds,onEdit:(t,c)=>handleEdit(t,c),onDelete:handleDelete,onToggle:handleToggle,onAdd:handleAdd,onDragStart:(e,t,c)=>handleDragStart(e,t,c),onDrop:handleDrop,onDragOver:id=>setDragOver(id),onDragLeave:()=>setDragOver(null),dragOver,onTouchStart,onTouchMove,onTouchEnd};
   const badge=(n,bg)=><span style={{position:"absolute",top:-6,right:-6,background:bg,color:"#fff",fontSize:10,fontWeight:700,borderRadius:10,padding:"1px 6px"}}>{n}</span>;
