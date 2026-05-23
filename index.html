@@ -54,14 +54,21 @@ async function loadState(dateCols) {
     if (!data) return null;
     const s = data.data;
     const now = Date.now();
+    // 先週・先々週の列データも取得
+    const prevWeek1 = getWeekDateCols(-1);
+    const prevWeek2 = getWeekDateCols(-2);
     return {
       inbox:        s.inbox ?? [],
       amCols:       dateCols.map(d => s.amByDate?.[d.toDateString()] ?? []),
       pmCols:       dateCols.map(d => s.pmByDate?.[d.toDateString()] ?? []),
+      amColsPrev1:  prevWeek1.map(d => s.amByDate?.[d.toDateString()] ?? []),
+      pmColsPrev1:  prevWeek1.map(d => s.pmByDate?.[d.toDateString()] ?? []),
+      amColsPrev2:  prevWeek2.map(d => s.amByDate?.[d.toDateString()] ?? []),
+      pmColsPrev2:  prevWeek2.map(d => s.pmByDate?.[d.toDateString()] ?? []),
       doneIds:      new Set(s.doneIds ?? []),
       routines:     s.routines ?? [],
       trash:        (s.trash ?? []).filter(t => now - t.deletedAt < THREE_DAYS),
-      passwordHash: data.password_hash ?? null, // 別カラムから取得
+      passwordHash: data.password_hash ?? null,
     };
   } catch(e) {
     console.error("loadState exception:", e);
@@ -99,6 +106,18 @@ const DAYS_JP = ["日","月","火","水","木","金","土"];
 function getDateColumns() {
   const t = new Date(); t.setHours(0,0,0,0);
   return Array.from({length:7}, (_,i) => { const d = new Date(t); d.setDate(t.getDate()+i); return d; });
+}
+function getWeekDateCols(weekOffset) {
+  const t = new Date(); t.setHours(0,0,0,0);
+  // 月曜起点: 日曜=0→6, 月曜=1→0, ...
+  const dow = t.getDay();
+  const monday = new Date(t);
+  monday.setDate(t.getDate() - ((dow + 6) % 7) + weekOffset * 7);
+  return Array.from({length:7}, (_,i) => { const d = new Date(monday); d.setDate(monday.getDate()+i); return d; });
+}
+function getTodayIndex(dateCols) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  return dateCols.findIndex(d => d.toDateString() === today.toDateString());
 }
 function fmtDate(d) { return `${d.getMonth()+1}/${d.getDate()}`; }
 function getDayLabel(i) { return i===0?"今日":i===1?"明日":i===2?"明後日":`${i}日後`; }
@@ -410,8 +429,10 @@ function SlotColumn({ colId, isAm, todos, doneIds, onEdit, onDelete, onToggle, o
 
 function DayColumn({ dayIndex, date, amTodos, pmTodos, accent, ...sp }) {
   const amId=`d${dayIndex}-am`, pmId=`d${dayIndex}-pm`;
+  const today=new Date(); today.setHours(0,0,0,0);
+  const isToday=date.toDateString()===today.toDateString();
   return (
-    <div style={{...FONT_STYLE,background:"#fff",border:"1.5px solid #e2e2e2",borderRadius:14,padding:"14px 12px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+    <div style={{...FONT_STYLE,background:"#fff",border:`${isToday?"2px":"1.5px"} solid ${isToday?PINK:"#e2e2e2"}`,borderRadius:14,padding:"14px 12px",boxShadow:isToday?`0 0 0 3px ${PINK_LIGHT}`:"0 1px 4px rgba(0,0,0,.06)"}}>
       <div style={{marginBottom:4}}>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           <div style={{width:3,height:16,background:accent,borderRadius:2}}/>
@@ -1003,7 +1024,11 @@ function TrashBin({ trash, onRestore, onPermanentDelete, onClearAll }) {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 function App() {
-  const dateCols = useMemo(() => getDateColumns(), []);
+  const dateCols = useMemo(() => getWeekDateCols(0), []);
+  const prevWeek1Cols = useMemo(() => getWeekDateCols(-1), []);
+  const prevWeek2Cols = useMemo(() => getWeekDateCols(-2), []);
+  const [boardWeek,setBoardWeek]=useState(0); // 0=今週, -1=先週, -2=先々週
+  const boardScrollRef = useRef(null);
   const [loaded,setLoaded]=useState(false);
   const [authed,setAuthed]=useState(false);
   const [isNewUser,setIsNewUser]=useState(false);
@@ -1013,6 +1038,10 @@ function App() {
   const [inbox,setInbox]=useState([]);
   const [amCols,setAmCols]=useState(()=>dateCols.map(()=>[]));
   const [pmCols,setPmCols]=useState(()=>dateCols.map(()=>[]));
+  const [amColsPrev1,setAmColsPrev1]=useState(()=>prevWeek1Cols.map(()=>[]));
+  const [pmColsPrev1,setPmColsPrev1]=useState(()=>prevWeek1Cols.map(()=>[]));
+  const [amColsPrev2,setAmColsPrev2]=useState(()=>prevWeek2Cols.map(()=>[]));
+  const [pmColsPrev2,setPmColsPrev2]=useState(()=>prevWeek2Cols.map(()=>[]));
   const [doneIds,setDoneIds]=useState(new Set());
   const [routines,setRoutines]=useState([]);
   const [trash,setTrash]=useState([]);
@@ -1037,6 +1066,10 @@ function App() {
         const savedRoutines=s.routines||[];
         const {amCols:newAm,pmCols:newPm}=autoGenerateFromDefinitions(s.amCols,s.pmCols,savedRoutines,dateCols);
         setInbox(s.inbox); setAmCols(newAm); setPmCols(newPm); setDoneIds(s.doneIds); setRoutines(savedRoutines); setTrash(s.trash||[]);
+        setAmColsPrev1(s.amColsPrev1||prevWeek1Cols.map(()=>[]));
+        setPmColsPrev1(s.pmColsPrev1||prevWeek1Cols.map(()=>[]));
+        setAmColsPrev2(s.amColsPrev2||prevWeek2Cols.map(()=>[]));
+        setPmColsPrev2(s.pmColsPrev2||prevWeek2Cols.map(()=>[]));
         setSavedHash(s.passwordHash||null); setIsNewUser(!s.passwordHash);
         if (urlUser==="main") { setAuthed(true); }
       } else {
@@ -1046,6 +1079,17 @@ function App() {
       setLoaded(true);
     });
   }, []);
+  // 今週タブ表示時に今日の列へ自動スクロール
+  useEffect(()=>{
+    if (!loaded||!authed||boardWeek!==0) return;
+    const todayIdx=getTodayIndex(dateCols);
+    if (todayIdx<0) return;
+    const timer=setTimeout(()=>{
+      const el=document.getElementById(`day-col-${todayIdx}`);
+      if (el) el.scrollIntoView({behavior:"smooth",inline:"start",block:"nearest"});
+    }, 120);
+    return ()=>clearTimeout(timer);
+  },[loaded,authed,boardWeek]);
   useEffect(()=>{ const fn=()=>setLayout(window.innerWidth<720?"stack":"board"); window.addEventListener("resize",fn); return()=>window.removeEventListener("resize",fn); },[]);
   useEffect(()=>{
     if (!loaded||!authed) return;
@@ -1163,8 +1207,10 @@ function App() {
   };
 
   const allTodos = useMemo(() =>
-    [...inbox, ...amCols.flat(), ...pmCols.flat()],
-    [inbox, amCols, pmCols]
+    [...inbox, ...amCols.flat(), ...pmCols.flat(),
+     ...amColsPrev1.flat(), ...pmColsPrev1.flat(),
+     ...amColsPrev2.flat(), ...pmColsPrev2.flat()],
+    [inbox, amCols, pmCols, amColsPrev1, pmColsPrev1, amColsPrev2, pmColsPrev2]
   );
   const overdueCnt = useMemo(() =>
     allTodos.filter(t=>isOverdue(t,doneIds)).length,
@@ -1269,7 +1315,7 @@ function App() {
         </div>
       )}
 
-      <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:8,marginBottom:tab==="board"?8:18,flexWrap:"wrap"}}>
         {[["board","📋 ボード"],["routines","🔁 ルーティン管理"],["review","⏰ 週次レビュー"],["trash","🗑 ゴミ箱"],["guide","📖 使い方"]].map(([key,label])=>(
           <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"8px 14px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",border:"1.5px solid",background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0",position:"relative"}}>
             {label}
@@ -1280,24 +1326,86 @@ function App() {
         ))}
         {tab==="board" && <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:10,fontWeight:700,color:AM_TEXT,background:AM_LIGHT,borderRadius:4,padding:"3px 8px"}}>🌱 AM</span><span style={{fontSize:10,fontWeight:700,color:PM_TEXT,background:PM_LIGHT,borderRadius:4,padding:"3px 8px"}}>☀️ PM</span></div>}
       </div>
+      {tab==="board" && (
+        <div style={{display:"flex",gap:6,marginBottom:14,alignItems:"center"}}>
+          {[[0,"今週"],[- 1,"先週"],[-2,"先々週"]].map(([w,label])=>(
+            <button key={w} onClick={()=>setBoardWeek(w)} style={{...FONT_STYLE,padding:"5px 14px",borderRadius:20,fontSize:12,fontWeight:700,cursor:"pointer",border:"1.5px solid",background:boardWeek===w?PINK:"#fff",color:boardWeek===w?"#fff":w===0?"#555":"#888",borderColor:boardWeek===w?PINK:w===0?"#e0e0e0":"#e8e8e8"}}>
+              {label}
+            </button>
+          ))}
+          {boardWeek!==0 && <span style={{...FONT_STYLE,fontSize:11,color:"#aaa",marginLeft:4}}>👁 閲覧のみ</span>}
+        </div>
+      )}
       {tab==="guide" ? <QuickGuide/>
       :tab==="trash" ? <TrashBin trash={trash} onRestore={handleRestore} onPermanentDelete={id=>setTrash(p=>p.filter(t=>t.id!==id))} onClearAll={()=>setTrash([])}/>
       :tab==="routines" ? <RoutineManager routines={routines} onAdd={handleAddRoutine} onUpdate={handleUpdateRoutine} onDelete={handleDeleteRoutine} onToggle={handleToggleRoutine}/>
       :tab==="review" ? <WeeklyReview allTodos={allTodos} doneIds={doneIds} dateCols={dateCols} onApply={handleApplyReview}/>
+      :boardWeek!==0 ? (() => {
+        // 先週・先々週: 読み取り専用
+        const pCols = boardWeek===-1 ? prevWeek1Cols : prevWeek2Cols;
+        const pAm   = boardWeek===-1 ? amColsPrev1 : amColsPrev2;
+        const pPm   = boardWeek===-1 ? pmColsPrev1 : pmColsPrev2;
+        const pAccents=["#aaa","#999","#888","#888","#999","#aaa","#bbb"];
+        const ReadonlySlot = ({isAm,todos})=>(
+          <div style={{...FONT_STYLE,background:isAm?"#f8faf8":"#fffaf6",border:`1.5px solid ${isAm?"#c8e0c8":"#e8d0b8"}`,borderRadius:12,padding:"10px 12px",flex:1}}>
+            <div style={{fontSize:11,fontWeight:700,color:isAm?AM_HEAD:PM_HEAD,marginBottom:6}}>{isAm?"🌱 AM":"☀️ PM"}</div>
+            {todos.length===0 && <div style={{fontSize:11,color:"#ddd",textAlign:"center",padding:"10px 0",fontStyle:"italic"}}>なし</div>}
+            {todos.map(t=>(
+              <div key={t.id} style={{...FONT_STYLE,background:doneIds.has(t.id)?"#fafafa":"#fff",border:"1.5px solid #eee",borderRadius:8,padding:"8px 10px",marginBottom:6,opacity:doneIds.has(t.id)?0.5:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{width:14,height:14,borderRadius:3,border:`2px solid ${doneIds.has(t.id)?(isAm?AM_ACCENT:PM_ACCENT):"#ddd"}`,background:doneIds.has(t.id)?(isAm?AM_ACCENT:PM_ACCENT):"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    {doneIds.has(t.id)&&<span style={{color:"#fff",fontSize:9,fontWeight:700}}>✓</span>}
+                  </div>
+                  <span style={{...FONT_STYLE,fontSize:12,color:doneIds.has(t.id)?"#bbb":"#555",textDecoration:doneIds.has(t.id)?"line-through":"none",flex:1,wordBreak:"break-word"}}>{t.text}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+        const readonlyBoard = layout==="stack" ? (
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {pCols.map((date,i)=>(
+              <div key={i} style={{...FONT_STYLE,background:"#fff",border:"1.5px solid #e8e8e8",borderRadius:14,padding:"12px",opacity:0.9}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#888",marginBottom:8}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <ReadonlySlot isAm={true} todos={pAm[i]}/>
+                  <ReadonlySlot isAm={false} todos={pPm[i]}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:16,alignItems:"flex-start"}}>
+            {pCols.map((date,i)=>(
+              <div key={i} id={`day-col-prev-${i}`} style={{minWidth:240,maxWidth:280,width:260,flexShrink:0,...FONT_STYLE,background:"#fff",border:"1.5px solid #e8e8e8",borderRadius:14,padding:"12px",opacity:0.9}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}>
+                  <div style={{width:3,height:14,background:pAccents[i],borderRadius:2}}/>
+                  <div style={{fontSize:14,fontWeight:700,color:"#888"}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <ReadonlySlot isAm={true} todos={pAm[i]}/>
+                  <ReadonlySlot isAm={false} todos={pPm[i]}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+        return readonlyBoard;
+      })()
       :layout==="stack" ? (
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <QuickEntry onAdd={handleQuickAdd} dateCols={dateCols}/>
           <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")} onDragStart={(e,t)=>handleDragStart(e,t,"inbox")} onTouchStart={(e,t,ref)=>onTouchStart(e,t,"inbox",ref)} isDragOver={dragOver==="inbox"}/>
-          {dateCols.map((date,i)=><DayColumn key={i} dayIndex={i} date={date} accent={accents[i]} amTodos={amCols[i]} pmTodos={pmCols[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} onDragStart={(e,t,c)=>handleDragStart(e,t,c)}/>)}
+          {dateCols.map((date,i)=><div key={i} id={`day-col-${i}`}><DayColumn dayIndex={i} date={date} accent={accents[i]} amTodos={amCols[i]} pmTodos={pmCols[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} onDragStart={(e,t,c)=>handleDragStart(e,t,c)}/></div>)}
         </div>
       ) : (
-        <div style={{display:"flex",gap:14,overflowX:"auto",paddingBottom:16,alignItems:"flex-start"}}>
+        <div ref={boardScrollRef} style={{display:"flex",gap:14,overflowX:"auto",paddingBottom:16,alignItems:"flex-start"}}>
           <div style={{minWidth:250,maxWidth:270,width:260,flexShrink:0,display:"flex",flexDirection:"column"}}>
             <QuickEntry onAdd={handleQuickAdd} dateCols={dateCols}/>
             <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")} onDragStart={(e,t)=>handleDragStart(e,t,"inbox")} onTouchStart={(e,t,ref)=>onTouchStart(e,t,"inbox",ref)} isDragOver={dragOver==="inbox"}/>
           </div>
           <div style={{width:1,background:"#e2e2e2",alignSelf:"stretch",flexShrink:0}}/>
-          {dateCols.map((date,i)=><div key={i} style={{minWidth:260,maxWidth:300,width:280,flexShrink:0}}><DayColumn dayIndex={i} date={date} accent={accents[i]} amTodos={amCols[i]} pmTodos={pmCols[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} onDragStart={(e,t,c)=>handleDragStart(e,t,c)}/></div>)}
+          {dateCols.map((date,i)=><div key={i} id={`day-col-${i}`} style={{minWidth:260,maxWidth:300,width:280,flexShrink:0}}><DayColumn dayIndex={i} date={date} accent={accents[i]} amTodos={amCols[i]} pmTodos={pmCols[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} onDragStart={(e,t,c)=>handleDragStart(e,t,c)}/></div>)}
         </div>
       )}
       <div style={{...FONT_STYLE,marginTop:14,fontSize:11,color:"#bbb"}}>💡 カードを長押し＆ドラッグでAM/PM間・日付間を移動できます</div>
