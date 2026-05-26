@@ -58,10 +58,12 @@ async function loadState(dateCols) {
       inbox:        s.inbox ?? [],
       amCols:       dateCols.map(d => s.amByDate?.[d.toDateString()] ?? []),
       pmCols:       dateCols.map(d => s.pmByDate?.[d.toDateString()] ?? []),
+      amByDate:     s.amByDate ?? {},
+      pmByDate:     s.pmByDate ?? {},
       doneIds:      new Set(s.doneIds ?? []),
       routines:     s.routines ?? [],
       trash:        (s.trash ?? []).filter(t => now - t.deletedAt < THREE_DAYS),
-      passwordHash: data.password_hash ?? null, // 別カラムから取得
+      passwordHash: data.password_hash ?? null,
     };
   } catch(e) {
     console.error("loadState exception:", e);
@@ -74,11 +76,17 @@ function saveState(state, dateCols, onError) {
   clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
     try {
-      const amByDate = {}, pmByDate = {};
+      const amByDate = { ...(state.amByDate ?? {}) };
+      const pmByDate = { ...(state.pmByDate ?? {}) };
       dateCols.forEach((d,i) => { amByDate[d.toDateString()] = state.amCols[i]; pmByDate[d.toDateString()] = state.pmCols[i]; });
+      if (state.extraWeeks) {
+        state.extraWeeks.forEach(({cols,am,pm}) => {
+          cols.forEach((d,i) => { amByDate[d.toDateString()] = am[i]; pmByDate[d.toDateString()] = pm[i]; });
+        });
+      }
       await _sb.from("todos").upsert({
         id: DB_ROW_ID,
-        password_hash: state.passwordHash ?? null, // 別カラムに保存
+        password_hash: state.passwordHash ?? null,
         data: { inbox: state.inbox, amByDate, pmByDate, doneIds: [...state.doneIds], routines: state.routines, trash: state.trash, savedAt: Date.now() },
         updated_at: new Date().toISOString(),
       });
@@ -96,9 +104,16 @@ const PM_BG = "#fff6ee", PM_BORDER = "#f5a55a", PM_ACCENT = "#e06010", PM_LIGHT 
 const FONT_STYLE = { fontFamily: "'Noto Sans JP', 'Hiragino Sans', sans-serif" };
 const DAYS_JP = ["日","月","火","水","木","金","土"];
 
-function getDateColumns() {
+function getWeekDateCols(weekOffset) {
   const t = new Date(); t.setHours(0,0,0,0);
-  return Array.from({length:7}, (_,i) => { const d = new Date(t); d.setDate(t.getDate()+i); return d; });
+  const dow = t.getDay();
+  const monday = new Date(t);
+  monday.setDate(t.getDate() - ((dow + 6) % 7) + weekOffset * 7);
+  return Array.from({length:7}, (_,i) => { const d = new Date(monday); d.setDate(monday.getDate()+i); return d; });
+}
+function getTodayColIndex(dateCols) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  return dateCols.findIndex(d => d.toDateString() === today.toDateString());
 }
 function fmtDate(d) { return `${d.getMonth()+1}/${d.getDate()}`; }
 function getDayLabel(i) { return i===0?"今日":i===1?"明日":i===2?"明後日":`${i}日後`; }
@@ -1055,7 +1070,12 @@ function TrashBin({ trash, onRestore, onPermanentDelete, onClearAll }) {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 function App() {
-  const dateCols = useMemo(() => getDateColumns(), []);
+  const dateCols     = useMemo(() => getWeekDateCols(0),  []);
+  const nextWeek1Cols= useMemo(() => getWeekDateCols(1),  []);
+  const nextWeek2Cols= useMemo(() => getWeekDateCols(2),  []);
+  const prevWeek1Cols= useMemo(() => getWeekDateCols(-1), []);
+  const prevWeek2Cols= useMemo(() => getWeekDateCols(-2), []);
+  const [boardWeek,setBoardWeek]=useState(0);
   const [loaded,setLoaded]=useState(false);
   const [authed,setAuthed]=useState(false);
   const [isNewUser,setIsNewUser]=useState(false);
@@ -1065,11 +1085,29 @@ function App() {
   const [inbox,setInbox]=useState([]);
   const [amCols,setAmCols]=useState(()=>dateCols.map(()=>[]));
   const [pmCols,setPmCols]=useState(()=>dateCols.map(()=>[]));
+  const [amNext1,setAmNext1]=useState(()=>nextWeek1Cols.map(()=>[]));
+  const [pmNext1,setPmNext1]=useState(()=>nextWeek1Cols.map(()=>[]));
+  const [amNext2,setAmNext2]=useState(()=>nextWeek2Cols.map(()=>[]));
+  const [pmNext2,setPmNext2]=useState(()=>nextWeek2Cols.map(()=>[]));
+  const [amPrev1,setAmPrev1]=useState(()=>prevWeek1Cols.map(()=>[]));
+  const [pmPrev1,setPmPrev1]=useState(()=>prevWeek1Cols.map(()=>[]));
+  const [amPrev2,setAmPrev2]=useState(()=>prevWeek2Cols.map(()=>[]));
+  const [pmPrev2,setPmPrev2]=useState(()=>prevWeek2Cols.map(()=>[]));
+  const [amByDate,setAmByDate]=useState({});
+  const [pmByDate,setPmByDate]=useState({});
   const [doneIds,setDoneIds]=useState(new Set());
   const [routines,setRoutines]=useState([]);
   const [trash,setTrash]=useState([]);
   const [editTodo,setEditTodo]=useState(null);
   const [showModal,setShowModal]=useState(false);
+  const getWeekData = (w) => {
+    if (w===1)  return { cols:nextWeek1Cols, am:amNext1, pm:pmNext1, setAm:setAmNext1, setPm:setPmNext1 };
+    if (w===2)  return { cols:nextWeek2Cols, am:amNext2, pm:pmNext2, setAm:setAmNext2, setPm:setPmNext2 };
+    if (w===-1) return { cols:prevWeek1Cols, am:amPrev1, pm:pmPrev1, setAm:setAmPrev1, setPm:setPmPrev1 };
+    if (w===-2) return { cols:prevWeek2Cols, am:amPrev2, pm:pmPrev2, setAm:setAmPrev2, setPm:setPmPrev2 };
+    return { cols:dateCols, am:amCols, pm:pmCols, setAm:setAmCols, setPm:setPmCols };
+  };
+
   const handleReorder = useCallback((colId, fromIdx, toIdx) => {
     const reorder = arr => { const a=[...arr]; const [item]=a.splice(fromIdx,1); a.splice(toIdx,0,item); return a; };
     if (colId==="inbox") { setInbox(reorder); return; }
@@ -1096,6 +1134,16 @@ function App() {
         const savedRoutines=s.routines||[];
         const {amCols:newAm,pmCols:newPm}=autoGenerateFromDefinitions(s.amCols,s.pmCols,savedRoutines,dateCols);
         setInbox(s.inbox); setAmCols(newAm); setPmCols(newPm); setDoneIds(s.doneIds); setRoutines(savedRoutines); setTrash(s.trash||[]);
+        const abd=s.amByDate||{}, pbd=s.pmByDate||{};
+        setAmByDate(abd); setPmByDate(pbd);
+        setAmNext1(nextWeek1Cols.map(d=>abd[d.toDateString()]||[]));
+        setPmNext1(nextWeek1Cols.map(d=>pbd[d.toDateString()]||[]));
+        setAmNext2(nextWeek2Cols.map(d=>abd[d.toDateString()]||[]));
+        setPmNext2(nextWeek2Cols.map(d=>pbd[d.toDateString()]||[]));
+        setAmPrev1(prevWeek1Cols.map(d=>abd[d.toDateString()]||[]));
+        setPmPrev1(prevWeek1Cols.map(d=>pbd[d.toDateString()]||[]));
+        setAmPrev2(prevWeek2Cols.map(d=>abd[d.toDateString()]||[]));
+        setPmPrev2(prevWeek2Cols.map(d=>pbd[d.toDateString()]||[]));
         setSavedHash(s.passwordHash||null); setIsNewUser(!s.passwordHash);
         if (urlUser==="main") { setAuthed(true); }
       } else {
@@ -1105,13 +1153,24 @@ function App() {
       setLoaded(true);
     });
   }, []);
+  useEffect(()=>{
+    if (!loaded||!authed||boardWeek!==0) return;
+    const idx=getTodayColIndex(dateCols);
+    if (idx<0) return;
+    const timer=setTimeout(()=>{ document.getElementById(`day-col-0-${idx}`)?.scrollIntoView({behavior:"smooth",inline:"start",block:"nearest"}); }, 150);
+    return ()=>clearTimeout(timer);
+  },[loaded,authed,boardWeek]);
   useEffect(()=>{ const fn=()=>setLayout(window.innerWidth<720?"stack":"board"); window.addEventListener("resize",fn); return()=>window.removeEventListener("resize",fn); },[]);
   useEffect(()=>{
     if (!loaded||!authed) return;
-    saveState({inbox,amCols,pmCols,doneIds,routines,trash,passwordHash:savedHash}, dateCols, ()=>setSaveError(true));
+    saveState({
+      inbox,amCols,pmCols,doneIds,routines,trash,passwordHash:savedHash,
+      amByDate,pmByDate,
+      extraWeeks:[{cols:nextWeek1Cols,am:amNext1,pm:pmNext1},{cols:nextWeek2Cols,am:amNext2,pm:pmNext2}]
+    }, dateCols, ()=>setSaveError(true));
     setSaveFlash(true); setSaveError(false);
     const t=setTimeout(()=>setSaveFlash(false),2200); return()=>clearTimeout(t);
-  },[inbox,amCols,pmCols,doneIds,routines,trash,loaded,authed]);
+  },[inbox,amCols,pmCols,amNext1,pmNext1,amNext2,pmNext2,doneIds,routines,trash,loaded,authed]);
 
   // colId helpers
   const parseColId = c => { if(c==="inbox")return{type:"inbox"}; const m=c.match(/^d(\d+)-(am|pm)$/); if(m)return{type:m[2],dayIndex:+m[1]}; return null; };
@@ -1134,11 +1193,13 @@ function App() {
     const now=Date.now();
     setDoneIds(p=>{const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n;});
     const upd=l=>l.map(t=>t.id===id?{...t,lastCheckedAt:now}:t);
-    setInbox(upd); setAmCols(p=>p.map(upd)); setPmCols(p=>p.map(upd));
+    setInbox(upd);
+    setAmCols(p=>p.map(upd)); setPmCols(p=>p.map(upd));
+    setAmNext1(p=>p.map(upd)); setPmNext1(p=>p.map(upd));
+    setAmNext2(p=>p.map(upd)); setPmNext2(p=>p.map(upd));
   };
   const handleDelete = id => {
-    const all=[...inbox,...amCols.flat(),...pmCols.flat()];
-    const target=all.find(t=>t.id===id);
+    const target=allTodos.find(t=>t.id===id);
     if (target) setTrash(p=>[...p,{...target,deletedAt:Date.now()}]);
     removeFromAll(id); setDoneIds(p=>{const n=new Set(p); n.delete(id); return n;});
   };
@@ -1151,12 +1212,26 @@ function App() {
     if (!editTodo) return;
     if (!updated.id) {
       const base=stampTodo({...updated,id:genId()});
-      const colIds=resolveColIds(base,dateCols);
-      if (colIds?.length) colIds.forEach(colId=>addToCol({...base,id:genId()},colId));
-      else addToCol(base, editTodo.colId);
+      const {cols:activeCols}=getWeekData(boardWeek);
+      const colIds=resolveColIds(base,activeCols);
+      if (colIds?.length) {
+        const {setAm,setPm}=getWeekData(boardWeek);
+        colIds.forEach(colId=>{ const p=parseColId(colId); if(!p)return; if(p.type==="inbox")setInbox(prev=>[...prev,{...base,id:genId()}]); else if(p.type==="am")setAm(prev=>{const n=[...prev];n[p.dayIndex]=[...n[p.dayIndex],{...base,id:genId()}];return n;}); else setPm(prev=>{const n=[...prev];n[p.dayIndex]=[...n[p.dayIndex],{...base,id:genId()}];return n;}); });
+      } else addToCol(base, editTodo.colId);
     } else {
-      const upd=l=>l.map(t=>t.id===updated.id?updated:t);
-      setInbox(upd); setAmCols(p=>p.map(upd)); setPmCols(p=>p.map(upd));
+      const {cols:activeCols}=getWeekData(boardWeek);
+      const colIds=resolveColIds(updated,activeCols);
+      if (colIds?.length) {
+        removeFromAll(updated.id);
+        const {setAm,setPm}=getWeekData(boardWeek);
+        colIds.forEach(colId=>{ const p=parseColId(colId); if(!p)return; if(p.type==="inbox")setInbox(prev=>[...prev,{...updated,id:genId()}]); else if(p.type==="am")setAm(prev=>{const n=[...prev];n[p.dayIndex]=[...n[p.dayIndex],{...updated,id:genId()}];return n;}); else setPm(prev=>{const n=[...prev];n[p.dayIndex]=[...n[p.dayIndex],{...updated,id:genId()}];return n;}); });
+      } else {
+        const upd=l=>l.map(t=>t.id===updated.id?updated:t);
+        setInbox(upd);
+        setAmCols(p=>p.map(upd)); setPmCols(p=>p.map(upd));
+        setAmNext1(p=>p.map(upd)); setPmNext1(p=>p.map(upd));
+        setAmNext2(p=>p.map(upd)); setPmNext2(p=>p.map(upd));
+      }
     }
     setShowModal(false); setEditTodo(null);
   };
@@ -1189,7 +1264,13 @@ function App() {
   const handleToggleRoutine = id => { const def=routines.find(r=>r.id===id); if(def) handleUpdateRoutine({...def,active:!def.active}); };
   const handleApplyReview = proposals => {
     proposals.forEach(({todo,colId})=>addToCol(stampTodo({...todo,id:genId(),createdAt:Date.now(),lastCheckedAt:null}),colId));
-    proposals.forEach(({todo})=>{ const upd=l=>l.map(t=>t.id===todo.id?{...t,genre:todo.genre}:t); setInbox(upd); setAmCols(p=>p.map(upd)); setPmCols(p=>p.map(upd)); });
+    proposals.forEach(({todo})=>{
+      const upd=l=>l.map(t=>t.id===todo.id?{...t,genre:todo.genre}:t);
+      setInbox(upd);
+      setAmCols(p=>p.map(upd)); setPmCols(p=>p.map(upd));
+      setAmNext1(p=>p.map(upd)); setPmNext1(p=>p.map(upd));
+      setAmNext2(p=>p.map(upd)); setPmNext2(p=>p.map(upd));
+    });
   };
 
   // Auth
@@ -1208,8 +1289,13 @@ function App() {
   };
 
   const allTodos = useMemo(() =>
-    [...inbox, ...amCols.flat(), ...pmCols.flat()],
-    [inbox, amCols, pmCols]
+    [...inbox,
+     ...amCols.flat(), ...pmCols.flat(),
+     ...amNext1.flat(), ...pmNext1.flat(),
+     ...amNext2.flat(), ...pmNext2.flat(),
+     ...amPrev1.flat(), ...pmPrev1.flat(),
+     ...amPrev2.flat(), ...pmPrev2.flat()],
+    [inbox,amCols,pmCols,amNext1,pmNext1,amNext2,pmNext2,amPrev1,pmPrev1,amPrev2,pmPrev2]
   );
   const overdueCnt = useMemo(() =>
     allTodos.filter(t=>isOverdue(t,doneIds)).length,
@@ -1315,7 +1401,7 @@ function App() {
         </div>
       )}
 
-      <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:8,marginBottom:tab==="board"?8:18,flexWrap:"wrap"}}>
         {[["board","📋 ボード"],["routines","🔁 ルーティン管理"],["review","⏰ 週次レビュー"],["trash","🗑 ゴミ箱"],["guide","📖 使い方"]].map(([key,label])=>(
           <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"8px 14px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",border:"1.5px solid",background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0",position:"relative"}}>
             {label}
@@ -1326,26 +1412,100 @@ function App() {
         ))}
         {tab==="board" && <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:10,fontWeight:700,color:AM_TEXT,background:AM_LIGHT,borderRadius:4,padding:"3px 8px"}}>🌱 AM</span><span style={{fontSize:10,fontWeight:700,color:PM_TEXT,background:PM_LIGHT,borderRadius:4,padding:"3px 8px"}}>☀️ PM</span></div>}
       </div>
+      {tab==="board" && (
+        <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+          {[[-2,"先々週",true],[-1,"先週",true],[0,"🗓 今週",false],[1,"来週",false],[2,"再来週",false]].map(([w,label,readOnly])=>{
+            const isActive=boardWeek===w;
+            return (
+              <button key={w} onClick={()=>setBoardWeek(w)} style={{...FONT_STYLE,padding:"5px 14px",borderRadius:20,fontSize:12,fontWeight:700,cursor:"pointer",border:"1.5px solid",
+                background:isActive?(readOnly?"#888":PINK):"#fff",
+                color:isActive?"#fff":(readOnly?"#aaa":"#555"),
+                borderColor:isActive?(readOnly?"#888":PINK):(readOnly?"#e8e8e8":"#e0e0e0")}}>
+                {label}
+              </button>
+            );
+          })}
+          {(boardWeek===-1||boardWeek===-2) && <span style={{...FONT_STYLE,fontSize:11,color:"#aaa",marginLeft:2}}>👁 閲覧のみ</span>}
+        </div>
+      )}
       {tab==="guide" ? <QuickGuide/>
       :tab==="trash" ? <TrashBin trash={trash} onRestore={handleRestore} onPermanentDelete={id=>setTrash(p=>p.filter(t=>t.id!==id))} onClearAll={()=>setTrash([])}/>
       :tab==="routines" ? <RoutineManager routines={routines} onAdd={handleAddRoutine} onUpdate={handleUpdateRoutine} onDelete={handleDeleteRoutine} onToggle={handleToggleRoutine}/>
       :tab==="review" ? <WeeklyReview allTodos={allTodos} doneIds={doneIds} dateCols={dateCols} onApply={handleApplyReview}/>
-      :layout==="stack" ? (
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <QuickEntry onAdd={handleQuickAdd} dateCols={dateCols}/>
-          <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>
-          {dateCols.map((date,i)=>{ const isToday=date.toDateString()===TODAY.toDateString(); return <DayColumn key={i} dayIndex={i} date={date} accent={isToday?PINK:accents[i]} amTodos={amCols[i]} pmTodos={pmCols[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday}/>; })}
-        </div>
-      ) : (
-        <div style={{display:"flex",gap:14,overflowX:"auto",paddingBottom:16,alignItems:"flex-start"}}>
-          <div style={{minWidth:250,maxWidth:270,width:260,flexShrink:0,display:"flex",flexDirection:"column"}}>
-            <QuickEntry onAdd={handleQuickAdd} dateCols={dateCols}/>
-            <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>
+      :(()=>{
+        const {cols,am,pm}=getWeekData(boardWeek);
+        const isReadOnly=boardWeek===-1||boardWeek===-2;
+        const wkAccents=[PINK,"#c9437a","#be4280","#b34186","#a8408c","#9e3f8e","#934090"];
+        const pastAccents=["#aaa","#999","#888","#888","#999","#aaa","#bbb"];
+        const colAccents=isReadOnly?pastAccents:wkAccents;
+        const isToday=date=>date.toDateString()===TODAY.toDateString();
+        const ReadonlySlot=({isAm,todos})=>(
+          <div style={{...FONT_STYLE,background:isAm?"#f8faf8":"#fffaf6",border:`1.5px solid ${isAm?"#c8e0c8":"#e8d0b8"}`,borderRadius:12,padding:"10px 12px",flex:1}}>
+            <div style={{fontSize:11,fontWeight:700,color:isAm?AM_HEAD:PM_HEAD,marginBottom:6}}>{isAm?"🌱 AM":"☀️ PM"}</div>
+            {todos.length===0&&<div style={{fontSize:11,color:"#ddd",textAlign:"center",padding:"10px 0",fontStyle:"italic"}}>なし</div>}
+            {todos.map(t=>(
+              <div key={t.id} style={{...FONT_STYLE,background:"#fff",border:`${t.important?"2px solid #E24B4A":"1.5px solid #eee"}`,borderRadius:8,padding:"8px 10px",marginBottom:6,opacity:doneIds.has(t.id)?0.5:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{width:14,height:14,borderRadius:3,border:`2px solid ${doneIds.has(t.id)?(isAm?AM_ACCENT:PM_ACCENT):"#ddd"}`,background:doneIds.has(t.id)?(isAm?AM_ACCENT:PM_ACCENT):"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    {doneIds.has(t.id)&&<span style={{color:"#fff",fontSize:9,fontWeight:700}}>✓</span>}
+                  </div>
+                  <span style={{...FONT_STYLE,fontSize:t.important?13:12,fontWeight:t.important?700:400,color:doneIds.has(t.id)?"#bbb":t.important?"#791F1F":"#555",textDecoration:doneIds.has(t.id)?"line-through":"none",flex:1,wordBreak:"break-word"}}>{t.text}</span>
+                </div>
+              </div>
+            ))}
           </div>
-          <div style={{width:1,background:"#e2e2e2",alignSelf:"stretch",flexShrink:0}}/>
-          {dateCols.map((date,i)=>{ const isToday=date.toDateString()===TODAY.toDateString(); return <div key={i} id={`day-col-${i}`} style={{minWidth:260,maxWidth:300,width:280,flexShrink:0}}><DayColumn dayIndex={i} date={date} accent={isToday?PINK:accents[i]} amTodos={amCols[i]} pmTodos={pmCols[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday}/></div>; })}
-        </div>
-      )}
+        );
+        if (isReadOnly) {
+          return layout==="stack" ? (
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              {cols.map((date,i)=>(
+                <div key={i} style={{...FONT_STYLE,background:"#fff",border:"1.5px solid #e8e8e8",borderRadius:14,padding:"12px",opacity:0.88}}>
+                  <div style={{fontSize:14,fontWeight:700,color:"#888",marginBottom:8}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}><ReadonlySlot isAm={true} todos={am[i]}/><ReadonlySlot isAm={false} todos={pm[i]}/></div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:16,alignItems:"flex-start"}}>
+              {cols.map((date,i)=>(
+                <div key={i} style={{minWidth:240,width:260,flexShrink:0,...FONT_STYLE,background:"#fff",border:"1.5px solid #e8e8e8",borderRadius:14,padding:"12px",opacity:0.88}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}>
+                    <div style={{width:3,height:14,background:colAccents[i],borderRadius:2}}/>
+                    <div style={{fontSize:14,fontWeight:700,color:"#888"}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}><ReadonlySlot isAm={true} todos={am[i]}/><ReadonlySlot isAm={false} todos={pm[i]}/></div>
+                </div>
+              ))}
+            </div>
+          );
+        }
+        return layout==="stack" ? (
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>}
+            {boardWeek===0 && <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>}
+            {cols.map((date,i)=>(
+              <div key={i} id={`day-col-${boardWeek}-${i}`}>
+                <DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{display:"flex",gap:14,overflowX:"auto",paddingBottom:16,alignItems:"flex-start"}}>
+            {boardWeek===0 && (
+              <div style={{minWidth:250,maxWidth:270,width:260,flexShrink:0,display:"flex",flexDirection:"column"}}>
+                <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>
+                <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>
+              </div>
+            )}
+            {boardWeek===0 && <div style={{width:1,background:"#e2e2e2",alignSelf:"stretch",flexShrink:0}}/>}
+            {cols.map((date,i)=>(
+              <div key={i} id={`day-col-${boardWeek}-${i}`} style={{minWidth:260,maxWidth:300,width:280,flexShrink:0}}>
+                <DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       <div style={{...FONT_STYLE,marginTop:14,fontSize:11,color:"#bbb"}}>💡 ✏️ 編集から重要マーク設定、ドラッグハンドルで並び替えができます</div>
       {showModal&&editTodo && <EditModal todo={editTodo.todo} onSave={handleSave} onClose={()=>{setShowModal(false);setEditTodo(null);}}/>}
     </div>
