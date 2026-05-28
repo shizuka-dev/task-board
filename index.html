@@ -589,19 +589,19 @@ function QuickEntry({ onAdd, dateCols }) {
     <div style={{...FONT_STYLE,background:"#fff",border:`1.5px solid ${focused?PINK:"#d8d8d8"}`,borderRadius:12,padding:"14px 16px",marginBottom:12,boxShadow:focused?`0 0 0 3px ${PINK_LIGHT}`:"0 1px 3px rgba(0,0,0,.06)"}}>
       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
         <span style={{fontSize:12,fontWeight:700,color:PINK}}>⚡ クイック入力</span>
-        <span style={{fontSize:10,color:"#bbb",marginLeft:"auto"}}>Ctrl+Enter で追加</span>
+        <span style={{fontSize:10,color:"#bbb",marginLeft:"auto"}}>⌘Enter</span>
       </div>
 
       {/* テキストエリア */}
       <textarea ref={textareaRef} value={text} onChange={e=>setText(e.target.value)} onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
         onKeyDown={e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();submit();}}}
-        rows={3} placeholder="タスク名 ＋ 日時語句を入力（例：毎週月 朝のMTG AM）"
-        style={{...FONT_STYLE,width:"100%",background:"#f7f7f7",border:"1.5px solid #e8e8e8",borderRadius:6,padding:"10px 12px",fontSize:13,color:"#333",lineHeight:1.7,resize:"none",outline:"none",boxSizing:"border-box"}}/>
+        rows={2} placeholder="タスク名 + 日時語句…"
+        style={{...FONT_STYLE,width:"100%",background:"#f7f7f7",border:"1.5px solid #e8e8e8",borderRadius:6,padding:"9px 11px",fontSize:13,color:"#333",lineHeight:1.6,resize:"none",outline:"none",boxSizing:"border-box"}}/>
 
-      {/* ① ヒントチップ（入力欄の下） */}
-      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:8}}>
+      {/* ① ヒントチップ：横スクロール1行 */}
+      <div style={{display:"flex",gap:5,overflowX:"auto",marginTop:7,paddingBottom:2,WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none"}}>
         {HINT_CHIPS.map(ch=>(
-          <span key={ch.label} onClick={()=>insertChip(ch.insert)} style={chipStyle(ch.color,ch.bg)}>{ch.label}</span>
+          <span key={ch.label} onClick={()=>insertChip(ch.insert)} style={{...chipStyle(ch.color,ch.bg),flexShrink:0}}>{ch.label}</span>
         ))}
       </div>
 
@@ -1216,13 +1216,7 @@ function App() {
       setLoaded(true);
     });
   }, []);
-  useEffect(()=>{
-    if (!loaded||!authed||boardWeek!==0) return;
-    const idx=getTodayColIndex(dateCols);
-    if (idx<0) return;
-    const timer=setTimeout(()=>{ document.getElementById(`day-col-0-${idx}`)?.scrollIntoView({behavior:"smooth",inline:"start",block:"nearest"}); }, 150);
-    return ()=>clearTimeout(timer);
-  },[loaded,authed,boardWeek]);
+
   useEffect(()=>{ const fn=()=>setLayout(window.innerWidth<720?"stack":"board"); window.addEventListener("resize",fn); return()=>window.removeEventListener("resize",fn); },[]);
   useEffect(()=>{
     if (!loaded||!authed) return;
@@ -1426,7 +1420,7 @@ function App() {
           {urlUser!=="main" && <div style={{...FONT_STYLE,fontSize:11,fontWeight:700,color:"#fff",background:PINK,borderRadius:20,padding:"2px 10px"}}>{urlUser}</div>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{...FONT_STYLE,fontSize:10,fontWeight:700,color:saveError?"#cc3333":saveFlash?"#1b7a3a":"#bbb",transition:"color .4s"}}>{saveError?"⚠️ 保存失敗":saveFlash?"✓ 同期済み":"クラウド保存"}</div>
+          <div style={{...FONT_STYLE,fontSize:12,color:saveError?"#cc3333":saveFlash?"#1b7a3a":"#ccc",transition:"color .4s"}}>{saveError?"⚠️":saveFlash?"✓":""}</div>
           {/* 歯車ボタン */}
           <button onClick={()=>setShowSettings(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"#aaa",padding:"4px",lineHeight:1}} title="バックアップ・設定">⚙️</button>
         </div>
@@ -1464,31 +1458,32 @@ function App() {
         </div>
       )}
 
-      <div style={{display:"flex",gap:8,marginBottom:tab==="board"?8:18,flexWrap:"wrap"}}>
-        {[["board","📋 ボード"],["routines","🔁 ルーティン管理"],["review","⏰ 週次レビュー"],["trash","🗑 ゴミ箱"],["guide","📖 使い方"]].map(([key,label])=>(
-          <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"8px 14px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",border:"1.5px solid",background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0",position:"relative"}}>
-            {label}
+      {/* ── メインタブ：絵文字のみ横スクロール1行 ── */}
+      <div style={{display:"flex",gap:6,marginBottom:tab==="board"?6:16,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none"}}>
+        {[["board","📋"],["routines","🔁"],["review","⏰"],["trash","🗑"],["guide","📖"]].map(([key,icon])=>(
+          <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"7px 13px",borderRadius:8,fontSize:16,cursor:"pointer",border:"1.5px solid",flexShrink:0,position:"relative",background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0"}}>
+            {icon}
             {key==="review"&&overdueCnt>0 && badge(overdueCnt,PINK)}
             {key==="routines"&&routines.filter(r=>r.active).length>0 && badge(routines.filter(r=>r.active).length,"#555")}
             {key==="trash"&&trash.length>0 && badge(trash.length,"#aaa")}
           </button>
         ))}
-        {tab==="board" && <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}><span style={{fontSize:10,fontWeight:700,color:AM_TEXT,background:AM_LIGHT,borderRadius:4,padding:"3px 8px"}}>🌱 AM</span><span style={{fontSize:10,fontWeight:700,color:PM_TEXT,background:PM_LIGHT,borderRadius:4,padding:"3px 8px"}}>☀️ PM</span></div>}
       </div>
+      {/* ── 週タブ：今週左端、右→先週→先々週、左→来週→再来週 ── */}
       {tab==="board" && (
-        <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
-          {[[-2,"先々週",true],[-1,"先週",true],[0,"🗓 今週",false],[1,"来週",false],[2,"再来週",false]].map(([w,label,readOnly])=>{
+        <div style={{display:"flex",gap:6,marginBottom:12,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none"}}>
+          {[[0,"今週",false],[1,"来週",false],[2,"再来週",false],[-1,"先週",true],[-2,"先々週",true]].map(([w,label,readOnly])=>{
             const isActive=boardWeek===w;
             return (
-              <button key={w} onClick={()=>setBoardWeek(w)} style={{...FONT_STYLE,padding:"5px 14px",borderRadius:20,fontSize:12,fontWeight:700,cursor:"pointer",border:"1.5px solid",
+              <button key={w} onClick={()=>setBoardWeek(w)} style={{...FONT_STYLE,padding:"5px 14px",borderRadius:20,fontSize:12,fontWeight:700,cursor:"pointer",border:"1.5px solid",flexShrink:0,
                 background:isActive?(readOnly?"#888":PINK):"#fff",
                 color:isActive?"#fff":(readOnly?"#aaa":"#555"),
                 borderColor:isActive?(readOnly?"#888":PINK):(readOnly?"#e8e8e8":"#e0e0e0")}}>
-                {label}
+                {w===0?"🗓 今週":label}
               </button>
             );
           })}
-          {(boardWeek===-1||boardWeek===-2) && <span style={{...FONT_STYLE,fontSize:11,color:"#aaa",marginLeft:2}}>👁 閲覧のみ</span>}
+          {(boardWeek===-1||boardWeek===-2) && <span style={{...FONT_STYLE,fontSize:11,color:"#aaa",alignSelf:"center"}}>👁 閲覧のみ</span>}
         </div>
       )}
       {tab==="guide" ? <QuickGuide/>
@@ -1544,13 +1539,18 @@ function App() {
         }
         return layout==="stack" ? (
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {/* 今日より前の列（上にスクロールで見える） */}
+            {boardWeek===0 && cols.filter(date=>date<TODAY&&!isToday(date)).map((date,_,arr)=>{
+              const i=cols.indexOf(date);
+              return <div key={i} id={`day-col-${boardWeek}-${i}`}><DayColumn dayIndex={i} date={date} accent={colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={false}/></div>;
+            })}
             {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>}
             {boardWeek===0 && <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>}
-            {cols.map((date,i)=>(
-              <div key={i} id={`day-col-${boardWeek}-${i}`}>
-                <DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/>
-              </div>
-            ))}
+            {/* 今日以降の列 */}
+            {cols.filter(date=>date>=TODAY||boardWeek!==0).map((date,_arr)=>{
+              const i=cols.indexOf(date);
+              return <div key={i} id={`day-col-${boardWeek}-${i}`}><DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/></div>;
+            })}
           </div>
         ) : (
           <div style={{display:"flex",gap:14,overflowX:"auto",paddingBottom:16,alignItems:"flex-start"}}>
