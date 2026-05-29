@@ -507,9 +507,9 @@ function DayColumn({ dayIndex, date, amTodos, pmTodos, accent, isToday, doneIds,
       <div style={{marginBottom:4}}>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           <div style={{width:3,height:16,background:accent,borderRadius:2}}/>
-          <span style={{...FONT_STYLE,fontSize:13,color:"#111"}}>{getDayLabel(dayIndex)}</span>
+          <span style={{...FONT_STYLE,fontSize:13,fontWeight:isToday?700:400,color:isToday?PINK:"#111"}}>{getDayLabel(dayIndex)}</span>
         </div>
-        <div style={{...FONT_STYLE,fontSize:15,fontWeight:700,color:"#111",marginTop:3,marginLeft:9}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</div>
+        <div style={{...FONT_STYLE,fontSize:15,fontWeight:700,color:isToday?PINK:"#111",marginTop:3,marginLeft:9}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</div>
       </div>
       <VolumeBar amCount={amTodos.length} pmCount={pmTodos.length}/>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -1412,16 +1412,25 @@ function App() {
   };
 
   return (
-    <div style={{...FONT_STYLE,minHeight:"100vh",background:"#f5f6f8",padding:layout==="stack"?"16px 12px":"24px 20px",boxSizing:"border-box"}}>
-      <div style={{marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+    <div style={{...FONT_STYLE,height:layout==="stack"?"100dvh":"auto",minHeight:layout==="stack"?"unset":"100vh",background:"#f5f6f8",display:layout==="stack"?"flex":"block",flexDirection:"column",overflow:"hidden",boxSizing:"border-box"}}>
+      <div style={{marginBottom:layout==="stack"?10:16,padding:layout==="stack"?"12px 12px 0":"0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
         <div style={{display:"flex",alignItems:"baseline",gap:20}}>
           <h1 style={{...FONT_STYLE,margin:0,fontSize:20,fontWeight:700,color:"#0d0d0d"}}>Task Board</h1>
           <div style={{...FONT_STYLE,fontSize:13,color:"#0d0d0d"}}>{new Date().getFullYear()}年{new Date().getMonth()+1}月{new Date().getDate()}日 ({DAYS_JP[new Date().getDay()]})</div>
           {urlUser!=="main" && <div style={{...FONT_STYLE,fontSize:11,fontWeight:700,color:"#fff",background:PINK,borderRadius:20,padding:"2px 10px"}}>{urlUser}</div>}
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {/* PC時のみタブをヘッダー右に表示 */}
+          {layout!=="stack" && [["board","📋 ボード"],["routines","🔁 管理"],["review","⏰ レビュー"],["trash","🗑"],["guide","📖"]].map(([key,label])=>(
+            <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"5px 11px",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",border:"1.5px solid",position:"relative",flexShrink:0,background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0"}}>
+              {label}
+              {key==="review"&&overdueCnt>0 && badge(overdueCnt,PINK)}
+              {key==="routines"&&routines.filter(r=>r.active).length>0 && badge(routines.filter(r=>r.active).length,"#555")}
+              {key==="trash"&&trash.length>0 && badge(trash.length,"#aaa")}
+            </button>
+          ))}
+          {layout!=="stack" && <div style={{width:1,height:20,background:"#e0e0e0",margin:"0 2px"}}/>}
           <div style={{...FONT_STYLE,fontSize:12,color:saveError?"#cc3333":saveFlash?"#1b7a3a":"#ccc",transition:"color .4s"}}>{saveError?"⚠️":saveFlash?"✓":""}</div>
-          {/* 歯車ボタン */}
           <button onClick={()=>setShowSettings(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"#aaa",padding:"4px",lineHeight:1}} title="バックアップ・設定">⚙️</button>
         </div>
       </div>
@@ -1458,20 +1467,22 @@ function App() {
         </div>
       )}
 
-      {/* ── メインタブ：絵文字のみ横スクロール1行 ── */}
-      <div style={{display:"flex",gap:6,marginBottom:tab==="board"?6:16,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none"}}>
-        {[["board","📋"],["routines","🔁"],["review","⏰"],["trash","🗑"],["guide","📖"]].map(([key,icon])=>(
-          <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"7px 13px",borderRadius:8,fontSize:16,cursor:"pointer",border:"1.5px solid",flexShrink:0,position:"relative",background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0"}}>
-            {icon}
-            {key==="review"&&overdueCnt>0 && badge(overdueCnt,PINK)}
-            {key==="routines"&&routines.filter(r=>r.active).length>0 && badge(routines.filter(r=>r.active).length,"#555")}
-            {key==="trash"&&trash.length>0 && badge(trash.length,"#aaa")}
-          </button>
-        ))}
-      </div>
+      {/* ── メインタブ：スマホのみ表示（PC はヘッダー右に統合済み） ── */}
+      {layout==="stack" && (
+        <div style={{display:"flex",gap:6,marginBottom:tab==="board"?6:16,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none",flexShrink:0,padding:"0 12px"}}>
+          {[["board","📋"],["routines","🔁"],["review","⏰"],["trash","🗑"],["guide","📖"]].map(([key,icon])=>(
+            <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"7px 13px",borderRadius:8,fontSize:16,cursor:"pointer",border:"1.5px solid",flexShrink:0,position:"relative",background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0"}}>
+              {icon}
+              {key==="review"&&overdueCnt>0 && badge(overdueCnt,PINK)}
+              {key==="routines"&&routines.filter(r=>r.active).length>0 && badge(routines.filter(r=>r.active).length,"#555")}
+              {key==="trash"&&trash.length>0 && badge(trash.length,"#aaa")}
+            </button>
+          ))}
+        </div>
+      )}
       {/* ── 週タブ：今週左端、右→先週→先々週、左→来週→再来週 ── */}
       {tab==="board" && (
-        <div style={{display:"flex",gap:6,marginBottom:12,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none"}}>
+        <div style={{display:"flex",gap:6,marginBottom:layout==="stack"?12:8,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none",flexShrink:0,padding:layout==="stack"?"0 12px":"0"}}>
           {[[0,"今週",false],[1,"来週",false],[2,"再来週",false],[-1,"先週",true],[-2,"先々週",true]].map(([w,label,readOnly])=>{
             const isActive=boardWeek===w;
             return (
@@ -1486,10 +1497,10 @@ function App() {
           {(boardWeek===-1||boardWeek===-2) && <span style={{...FONT_STYLE,fontSize:11,color:"#aaa",alignSelf:"center"}}>👁 閲覧のみ</span>}
         </div>
       )}
-      {tab==="guide" ? <QuickGuide/>
-      :tab==="trash" ? <TrashBin trash={trash} onRestore={handleRestore} onPermanentDelete={id=>setTrash(p=>p.filter(t=>t.id!==id))} onClearAll={()=>setTrash([])}/>
-      :tab==="routines" ? <RoutineManager routines={routines} onAdd={handleAddRoutine} onUpdate={handleUpdateRoutine} onDelete={handleDeleteRoutine} onToggle={handleToggleRoutine}/>
-      :tab==="review" ? <WeeklyReview allTodos={allTodos} doneIds={doneIds} dateCols={dateCols} onApply={handleApplyReview}/>
+      {tab==="guide" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><QuickGuide/></div>
+      :tab==="trash" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><TrashBin trash={trash} onRestore={handleRestore} onPermanentDelete={id=>setTrash(p=>p.filter(t=>t.id!==id))} onClearAll={()=>setTrash([])}/></div>
+      :tab==="routines" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><RoutineManager routines={routines} onAdd={handleAddRoutine} onUpdate={handleUpdateRoutine} onDelete={handleDeleteRoutine} onToggle={handleToggleRoutine}/></div>
+      :tab==="review" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><WeeklyReview allTodos={allTodos} doneIds={doneIds} dateCols={dateCols} onApply={handleApplyReview}/></div>
       :(()=>{
         const {cols,am,pm}=getWeekData(boardWeek);
         const isReadOnly=boardWeek===-1||boardWeek===-2;
@@ -1538,38 +1549,76 @@ function App() {
           );
         }
         return layout==="stack" ? (
-          <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            {/* 今日より前の列（上にスクロールで見える） */}
-            {boardWeek===0 && cols.filter(date=>date<TODAY&&!isToday(date)).map((date,_,arr)=>{
-              const i=cols.indexOf(date);
-              return <div key={i} id={`day-col-${boardWeek}-${i}`}><DayColumn dayIndex={i} date={date} accent={colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={false}/></div>;
-            })}
-            {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>}
-            {boardWeek===0 && <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>}
-            {/* 今日以降の列 */}
-            {cols.filter(date=>date>=TODAY||boardWeek!==0).map((date,_arr)=>{
-              const i=cols.indexOf(date);
-              return <div key={i} id={`day-col-${boardWeek}-${i}`}><DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/></div>;
-            })}
+          <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
+            {/* 固定エリア：クイック入力＋ストック */}
+            <div style={{flexShrink:0,padding:"0 12px",background:"#f5f6f8"}}>
+              {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>}
+              {boardWeek===0 && <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>}
+              {boardWeek!==0 && <div style={{padding:"4px 0 6px",fontSize:11,color:"#aaa"}}>{isReadOnly?"👁 閲覧のみ — 過去の記録":""}</div>}
+            </div>
+            {/* スクロールエリア：日付列 */}
+            <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"0 12px 24px"}}>
+              {boardWeek===0 && getTodayColIndex(cols)>=0 && (
+                <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
+                  <button onClick={()=>{ document.getElementById(`day-col-${boardWeek}-today-stack`)?.scrollIntoView({behavior:"smooth",block:"start"}); }} style={{...FONT_STYLE,fontSize:11,fontWeight:700,color:PINK,background:PINK_LIGHT,border:`1px solid ${PINK}44`,borderRadius:99,padding:"4px 12px",cursor:"pointer"}}>📍 今日に戻る</button>
+                </div>
+              )}
+              {/* 今日より前の列（上にスクロールで見える） */}
+              {boardWeek===0 && cols.filter(date=>date<TODAY&&!isToday(date)).map((date)=>{
+                const i=cols.indexOf(date);
+                return <div key={i} style={{marginBottom:14}} id={`day-col-${boardWeek}-${i}`}><DayColumn dayIndex={i} date={date} accent={colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={false}/></div>;
+              }).reverse()}
+              {/* 今日以降の列 */}
+              {cols.filter(date=>date>=TODAY||boardWeek!==0).map((date)=>{
+                const i=cols.indexOf(date);
+                const todayId=isToday(date)?`day-col-${boardWeek}-today-stack`:undefined;
+                return <div key={i} style={{marginBottom:14}} id={todayId||`day-col-${boardWeek}-${i}`}><DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/></div>;
+              })}
+            </div>
           </div>
-        ) : (
-          <div style={{display:"flex",gap:14,overflowX:"auto",paddingBottom:16,alignItems:"flex-start"}}>
-            {boardWeek===0 && (
-              <div style={{minWidth:250,maxWidth:270,width:260,flexShrink:0,display:"flex",flexDirection:"column"}}>
-                <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>
-                <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>
+        ) : (() => {
+          const scrollToToday = () => {
+            const el = document.getElementById(`day-col-${boardWeek}-today`);
+            el?.scrollIntoView({behavior:"smooth", inline:"start", block:"nearest"});
+          };
+          const todayIdx = getTodayColIndex(cols);
+          // 今日より前・今日・今日以降の順に並べる（boardWeek===0の今週のみ）
+          const orderedCols = boardWeek===0
+            ? [...cols.filter(d=>d<TODAY&&!isToday(d)), ...cols.filter(d=>d>=TODAY||isToday(d))]
+            : cols;
+          return (
+            <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+              {/* 左サイドバー：QE＋ストック固定 */}
+              {boardWeek===0 && (
+                <div style={{width:250,flexShrink:0,display:"flex",flexDirection:"column",gap:10,padding:"0 0 20px 0",borderRight:"1px solid #e8e8e8",overflowY:"auto"}}>
+                  <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>
+                  <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>
+                </div>
+              )}
+              {/* 日付エリア */}
+              <div style={{flex:1,overflowX:"auto",overflowY:"auto",padding:"0 0 24px 14px",WebkitOverflowScrolling:"touch"}}>
+                {/* 今日に戻るボタン */}
+                {boardWeek===0 && todayIdx>=0 && (
+                  <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
+                    <button onClick={scrollToToday} style={{...FONT_STYLE,fontSize:11,fontWeight:700,color:PINK,background:PINK_LIGHT,border:`1px solid ${PINK}44`,borderRadius:99,padding:"4px 12px",cursor:"pointer"}}>📍 今日に戻る</button>
+                  </div>
+                )}
+                <div style={{display:"flex",gap:14,alignItems:"flex-start",paddingBottom:16}}>
+                  {orderedCols.map((date)=>{
+                    const i=cols.indexOf(date);
+                    const past=boardWeek===0&&date<TODAY&&!isToday(date);
+                    return (
+                      <div key={i} id={isToday(date)?`day-col-${boardWeek}-today`:`day-col-${boardWeek}-${i}`} style={{minWidth:260,maxWidth:300,width:280,flexShrink:0,opacity:past?0.7:1}}>
+                        <DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            )}
-            {boardWeek===0 && <div style={{width:1,background:"#e2e2e2",alignSelf:"stretch",flexShrink:0}}/>}
-            {cols.map((date,i)=>(
-              <div key={i} id={`day-col-${boardWeek}-${i}`} style={{minWidth:260,maxWidth:300,width:280,flexShrink:0}}>
-                <DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/>
-              </div>
-            ))}
-          </div>
-        );
-      })()}
-      <div style={{...FONT_STYLE,marginTop:14,fontSize:11,color:"#bbb"}}>💡 ✏️ 編集から重要マーク設定、ドラッグハンドルで並び替えができます</div>
+            </div>
+          );
+        })()}
+      {layout!=="stack" && <div style={{...FONT_STYLE,marginTop:14,fontSize:11,color:"#bbb"}}>💡 ✏️ 編集から重要マーク設定、ドラッグハンドルで並び替えができます</div>}
       {showModal&&editTodo && <EditModal todo={editTodo.todo} onSave={handleSave} onClose={()=>{setShowModal(false);setEditTodo(null);}}/>}
     </div>
   );
