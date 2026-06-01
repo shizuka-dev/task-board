@@ -1432,6 +1432,60 @@ function App() {
   };
   };
 
+  // ── ボードコンテンツを事前計算（JSX内IIFEを避けるため）──
+  let boardContent = null;
+  if (tab === "board") {
+    const {cols,am,pm}=getWeekData(boardWeek);
+    const isReadOnly=boardWeek===-1||boardWeek===-2;
+    const wkAccents=[PINK,"#c9437a","#be4280","#b34186","#a8408c","#9e3f8e","#934090"];
+    const pastAccents=["#aaa","#999","#888","#888","#999","#aaa","#bbb"];
+    const colAccents=isReadOnly?pastAccents:wkAccents;
+    const isToday=date=>date.toDateString()===TODAY.toDateString();
+    if (isReadOnly) {
+      const items=cols.map((date,i)=>(
+        <div key={i} style={{...FONT_STYLE,background:"#fff",border:"1.5px solid #e8e8e8",borderRadius:14,padding:"12px",opacity:0.88}}>
+          {layout==="stack"
+            ? <div style={{fontSize:14,fontWeight:700,color:"#888",marginBottom:8}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</div>
+            : <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}><div style={{width:3,height:14,background:colAccents[i],borderRadius:2}}/><div style={{fontSize:14,fontWeight:700,color:"#888"}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</div></div>
+          }
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            <ReadonlySlot isAm={true} todos={am[i]} doneIds={doneIds}/>
+            <ReadonlySlot isAm={false} todos={pm[i]} doneIds={doneIds}/>
+          </div>
+        </div>
+      ));
+      boardContent = layout==="stack"
+        ? <div style={{display:"flex",flexDirection:"column",gap:12}}>{items}</div>
+        : <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:16,alignItems:"flex-start"}}>{items}</div>;
+    } else if (layout==="stack") {
+      boardContent = (
+        <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
+          <div style={{flexShrink:0,padding:"0 12px",background:"#f5f6f8"}}>
+            {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>}
+            {boardWeek===0 && <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>}
+          </div>
+          <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"0 12px 24px"}}>
+            {boardWeek===0 && getTodayColIndex(cols)>=0 && (<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>{document.getElementById(`day-col-${boardWeek}-today-stack`)?.scrollIntoView({behavior:"smooth",block:"start"});}} style={{...FONT_STYLE,fontSize:11,fontWeight:700,color:PINK,background:PINK_LIGHT,border:`1px solid ${PINK}44`,borderRadius:99,padding:"4px 12px",cursor:"pointer"}}>📍 今日に戻る</button></div>)}
+            {boardWeek===0 && cols.filter(d=>d<TODAY&&!isToday(d)).map((date)=>{ const i=cols.indexOf(date); return <div key={i} style={{marginBottom:14}} id={`day-col-${boardWeek}-${i}`}><DayColumn dayIndex={i} date={date} accent={colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={false}/></div>; }).reverse()}
+            {cols.filter(d=>d>=TODAY||boardWeek!==0).map((date)=>{ const i=cols.indexOf(date); const tid=isToday(date)?`day-col-${boardWeek}-today-stack`:undefined; return <div key={i} style={{marginBottom:14}} id={tid||`day-col-${boardWeek}-${i}`}><DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/></div>; })}
+          </div>
+        </div>
+      );
+    } else {
+      boardContent = (
+        <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+          {boardWeek===0 && (<div style={{width:250,flexShrink:0,display:"flex",flexDirection:"column",gap:10,padding:"0 0 20px 0",borderRight:"1px solid #e8e8e8",overflowY:"auto"}}><QuickEntry onAdd={handleQuickAdd} dateCols={cols}/><InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/></div>)}
+          <div style={{flex:1,overflowX:"auto",overflowY:"auto",padding:"0 0 24px 14px",WebkitOverflowScrolling:"touch"}}>
+            {boardWeek===0 && getTodayColIndex(cols)>=0 && (<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>{const el=document.getElementById(`day-col-${boardWeek}-today`);el?.scrollIntoView({behavior:"smooth",inline:"start",block:"nearest"});}} style={{...FONT_STYLE,fontSize:11,fontWeight:700,color:PINK,background:PINK_LIGHT,border:`1px solid ${PINK}44`,borderRadius:99,padding:"4px 12px",cursor:"pointer"}}>📍 今日に戻る</button></div>)}
+            <div style={{display:"flex",gap:14,alignItems:"flex-start",paddingBottom:16}}>
+              {(boardWeek===0?[...cols.filter(d=>d<TODAY&&!isToday(d)),...cols.filter(d=>d>=TODAY||isToday(d))]:cols).map((date)=>{ const i=cols.indexOf(date); const past=boardWeek===0&&date<TODAY&&!isToday(date); return (<div key={i} id={isToday(date)?`day-col-${boardWeek}-today`:`day-col-${boardWeek}-${i}`} style={{minWidth:260,maxWidth:300,width:280,flexShrink:0,opacity:past?0.7:1}}><DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/></div>); })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+  }
+
   return (
     <div style={{...FONT_STYLE,height:layout==="stack"?"100dvh":"auto",minHeight:layout==="stack"?"unset":"100vh",background:"#f5f6f8",display:layout==="stack"?"flex":"block",flexDirection:"column",overflow:"hidden",boxSizing:"border-box"}}>
       <div style={{marginBottom:layout==="stack"?10:16,padding:layout==="stack"?"12px 12px 0":"0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
@@ -1523,55 +1577,7 @@ function App() {
       :tab==="routines" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><RoutineManager routines={routines} onAdd={handleAddRoutine} onUpdate={handleUpdateRoutine} onDelete={handleDeleteRoutine} onToggle={handleToggleRoutine}/></div>
       :tab==="review" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><WeeklyReview allTodos={allTodos} doneIds={doneIds} dateCols={dateCols} onApply={handleApplyReview}/></div>
 
-      :(()=>{
-        const {cols,am,pm}=getWeekData(boardWeek);
-        const isReadOnly=boardWeek===-1||boardWeek===-2;
-        const wkAccents=[PINK,"#c9437a","#be4280","#b34186","#a8408c","#9e3f8e","#934090"];
-        const pastAccents=["#aaa","#999","#888","#888","#999","#aaa","#bbb"];
-        const colAccents=isReadOnly?pastAccents:wkAccents;
-        const isToday=date=>date.toDateString()===TODAY.toDateString();
-        if (isReadOnly) {
-          const items=cols.map((date,i)=>(
-            <div key={i} style={{...FONT_STYLE,background:"#fff",border:"1.5px solid #e8e8e8",borderRadius:14,padding:"12px",opacity:0.88}}>
-              {layout==="stack"
-                ? <div style={{fontSize:14,fontWeight:700,color:"#888",marginBottom:8}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</div>
-                : <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}><div style={{width:3,height:14,background:colAccents[i],borderRadius:2}}/><div style={{fontSize:14,fontWeight:700,color:"#888"}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</div></div>
-              }
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <ReadonlySlot isAm={true} todos={am[i]} doneIds={doneIds}/>
-                <ReadonlySlot isAm={false} todos={pm[i]} doneIds={doneIds}/>
-              </div>
-            </div>
-          ));
-          return layout==="stack"
-            ? <div style={{display:"flex",flexDirection:"column",gap:12}}>{items}</div>
-            : <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:16,alignItems:"flex-start"}}>{items}</div>;
-        }
-        if (layout==="stack") { return (
-          <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-            <div style={{flexShrink:0,padding:"0 12px",background:"#f5f6f8"}}>
-              {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>}
-              {boardWeek===0 && <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>}
-            </div>
-            <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"0 12px 24px"}}>
-              {boardWeek===0 && getTodayColIndex(cols)>=0 && (<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>{document.getElementById(`day-col-${boardWeek}-today-stack`)?.scrollIntoView({behavior:"smooth",block:"start"});}} style={{...FONT_STYLE,fontSize:11,fontWeight:700,color:PINK,background:PINK_LIGHT,border:`1px solid ${PINK}44`,borderRadius:99,padding:"4px 12px",cursor:"pointer"}}>📍 今日に戻る</button></div>)}
-              {boardWeek===0 && cols.filter(d=>d<TODAY&&!isToday(d)).map((date)=>{ const i=cols.indexOf(date); return <div key={i} style={{marginBottom:14}} id={`day-col-${boardWeek}-${i}`}><DayColumn dayIndex={i} date={date} accent={colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={false}/></div>; }).reverse()}
-              {cols.filter(d=>d>=TODAY||boardWeek!==0).map((date)=>{ const i=cols.indexOf(date); const tid=isToday(date)?`day-col-${boardWeek}-today-stack`:undefined; return <div key={i} style={{marginBottom:14}} id={tid||`day-col-${boardWeek}-${i}`}><DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/></div>; })}
-            </div>
-          </div>
-        ); }
-        return (
-          <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-            {boardWeek===0 && (<div style={{width:250,flexShrink:0,display:"flex",flexDirection:"column",gap:10,padding:"0 0 20px 0",borderRight:"1px solid #e8e8e8",overflowY:"auto"}}><QuickEntry onAdd={handleQuickAdd} dateCols={cols}/><InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/></div>)}
-            <div style={{flex:1,overflowX:"auto",overflowY:"auto",padding:"0 0 24px 14px",WebkitOverflowScrolling:"touch"}}>
-              {boardWeek===0 && getTodayColIndex(cols)>=0 && (<div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}><button onClick={()=>{const el=document.getElementById(`day-col-${boardWeek}-today`);el?.scrollIntoView({behavior:"smooth",inline:"start",block:"nearest"});}} style={{...FONT_STYLE,fontSize:11,fontWeight:700,color:PINK,background:PINK_LIGHT,border:`1px solid ${PINK}44`,borderRadius:99,padding:"4px 12px",cursor:"pointer"}}>📍 今日に戻る</button></div>)}
-              <div style={{display:"flex",gap:14,alignItems:"flex-start",paddingBottom:16}}>
-                {(boardWeek===0?[...cols.filter(d=>d<TODAY&&!isToday(d)),...cols.filter(d=>d>=TODAY||isToday(d))]:cols).map((date)=>{ const i=cols.indexOf(date); const past=boardWeek===0&&date<TODAY&&!isToday(date); return (<div key={i} id={isToday(date)?`day-col-${boardWeek}-today`:`day-col-${boardWeek}-${i}`} style={{minWidth:260,maxWidth:300,width:280,flexShrink:0,opacity:past?0.7:1}}><DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/></div>); })}
-              </div>
-            </div>
-          </div>
-        );
-      })()
+      :boardContent
       {layout!=="stack" && <div style={{...FONT_STYLE,marginTop:14,fontSize:11,color:"#bbb"}}>💡 ✏️ 編集から重要マーク設定、ドラッグハンドルで並び替えができます</div>}
       {showModal&&editTodo && <EditModal todo={editTodo.todo} onSave={handleSave} onClose={()=>{setShowModal(false);setEditTodo(null);}}/>}
     </div>
