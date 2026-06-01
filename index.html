@@ -1411,7 +1411,7 @@ function App() {
     e.target.value = ""; // 同じファイルを再選択できるようリセット
   };
 
-  const renderBoard = () => {
+  function renderBoard() {
         const {cols,am,pm}=getWeekData(boardWeek);
         const isReadOnly=boardWeek===-1||boardWeek===-2;
         const wkAccents=[PINK,"#c9437a","#be4280","#b34186","#a8408c","#9e3f8e","#934090"];
