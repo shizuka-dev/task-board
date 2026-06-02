@@ -1483,29 +1483,16 @@ function App() {
     }
     if (layout==="stack") {
       return (
-        <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-          <div style={{flexShrink:0,padding:"0 12px",background:"#f5f6f8"}}>
+        <div style={{overflowY:"auto",WebkitOverflowScrolling:"touch",flex:1,padding:"0 12px 32px"}}>
             {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>}
             {boardWeek===0 && <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>}
             {boardWeek!==0 && <div style={{padding:"4px 0 6px",fontSize:11,color:"#aaa"}}>{isReadOnly?"👁 閲覧のみ — 過去の記録":""}</div>}
-          </div>
-          <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch",padding:"0 12px 24px"}}>
-            {boardWeek===0 && getTodayColIndex(cols)>=0 && (
-              <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
-                <button onClick={()=>{ document.getElementById(`day-col-${boardWeek}-today-stack`)?.scrollIntoView({behavior:"smooth",block:"start"}); }} style={{...FONT_STYLE,fontSize:11,fontWeight:700,color:PINK,background:PINK_LIGHT,border:`1px solid ${PINK}44`,borderRadius:99,padding:"4px 12px",cursor:"pointer"}}>📍 今日に戻る</button>
+            {cols.map((date,i)=>(
+              <div key={i} style={{marginBottom:14}}>
+                <DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/>
               </div>
-            )}
-            {boardWeek===0 && cols.filter(date=>date<TODAY&&!isToday(date)).map((date)=>{
-              const i=cols.indexOf(date);
-              return <div key={i} style={{marginBottom:14}} id={`day-col-${boardWeek}-${i}`}><DayColumn dayIndex={i} date={date} accent={colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={false}/></div>;
-            }).reverse()}
-            {cols.filter(date=>date>=TODAY||boardWeek!==0).map((date)=>{
-              const i=cols.indexOf(date);
-              const todayId=isToday(date)?`day-col-${boardWeek}-today-stack`:undefined;
-              return <div key={i} style={{marginBottom:14}} id={todayId||`day-col-${boardWeek}-${i}`}><DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/></div>;
-            })}
+            ))}
           </div>
-        </div>
       );
     }
     return (
