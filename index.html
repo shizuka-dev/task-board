@@ -1239,6 +1239,14 @@ function App() {
 
   useEffect(()=>{ const fn=()=>setLayout(window.innerWidth<720?"stack":"board"); window.addEventListener("resize",fn); return()=>window.removeEventListener("resize",fn); },[]);
   useEffect(()=>{
+    if (!loaded||!authed||boardWeek!==0||layout!=="stack") return;
+    const timer=setTimeout(()=>{
+      const el=document.getElementById("day-col-0-today-stack");
+      if(el) el.scrollIntoView({block:"start",behavior:"auto"});
+    },200);
+    return ()=>clearTimeout(timer);
+  },[loaded,authed,layout,boardWeek]);
+  useEffect(()=>{
     if (!loaded||!authed) return;
     saveState({
       inbox,amCols,pmCols,doneIds,routines,trash,passwordHash:savedHash,
@@ -1531,7 +1539,6 @@ function App() {
     return null;
   })();
 
-  if(authed) console.log("[App render] tab=",tab,"boardWeek=",boardWeek,"layout=",layout,"boardContent=",typeof boardContent);
   return (
     <div style={{...FONT_STYLE,height:layout==="stack"?"100dvh":"auto",minHeight:layout==="stack"?"unset":"100vh",background:"#f5f6f8",display:layout==="stack"?"flex":"block",flexDirection:"column",overflow:"hidden",boxSizing:"border-box"}}>
       <div style={{marginBottom:layout==="stack"?10:16,padding:layout==="stack"?"12px 12px 0":"0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
@@ -1630,20 +1637,7 @@ function App() {
   );
 }
 
-class ErrorBoundary extends React.Component {
-  constructor(p){super(p);this.state={err:null};}
-  static getDerivedStateFromError(e){return {err:e};}
-  componentDidCatch(e,info){console.error("React Error:",e,info);}
-  render(){
-    if(this.state.err) return (
-      <div style={{padding:20,fontFamily:"monospace",background:"#fff0f0",color:"#cc0000",whiteSpace:"pre-wrap"}}>
-        <b>レンダリングエラー:</b>{String(this.state.err)}
-      </div>
-    );
-    return this.props.children;
-  }
-}
-ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App/></ErrorBoundary>);
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
 </html>
