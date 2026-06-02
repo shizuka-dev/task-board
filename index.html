@@ -1132,6 +1132,26 @@ function TrashBin({ trash, onRestore, onPermanentDelete, onClearAll }) {
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
+function ReadonlySlot({isAm, todos, doneIds}) {
+  const ac = isAm ? AM_ACCENT : PM_ACCENT;
+  return (
+    <div style={{...FONT_STYLE,background:isAm?"#f8faf8":"#fffaf6",border:`1.5px solid ${isAm?"#c8e0c8":"#e8d0b8"}`,borderRadius:12,padding:"10px 12px",flex:1}}>
+      <div style={{fontSize:11,fontWeight:700,color:isAm?AM_HEAD:PM_HEAD,marginBottom:6}}>{isAm?"🌱 AM":"☀️ PM"}</div>
+      {todos.length===0 && <div style={{fontSize:11,color:"#ddd",textAlign:"center",padding:"10px 0",fontStyle:"italic"}}>なし</div>}
+      {todos.map(t=>(
+        <div key={t.id} style={{...FONT_STYLE,background:"#fff",border:`${t.important?"2px solid #E24B4A":"1.5px solid #eee"}`,borderRadius:8,padding:"8px 10px",marginBottom:6,opacity:doneIds.has(t.id)?0.5:1}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{width:14,height:14,borderRadius:3,border:`2px solid ${doneIds.has(t.id)?ac:"#ddd"}`,background:doneIds.has(t.id)?ac:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              {doneIds.has(t.id) && <span style={{color:"#fff",fontSize:9,fontWeight:700}}>✓</span>}
+            </div>
+            <span style={{...FONT_STYLE,fontSize:t.important?13:12,fontWeight:t.important?700:400,color:doneIds.has(t.id)?"#bbb":t.important?"#791F1F":"#555",textDecoration:doneIds.has(t.id)?"line-through":"none",flex:1,wordBreak:"break-word"}}>{t.text}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function App() {
   const dateCols     = useMemo(() => getWeekDateCols(0),  []);
   const nextWeek1Cols= useMemo(() => getWeekDateCols(1),  []);
@@ -1412,24 +1432,7 @@ function App() {
     e.target.value = ""; // 同じファイルを再選択できるようリセット
   };
 
-  const ReadonlySlot = ({isAm, todos, doneIds}) => (
-    <div style={{...FONT_STYLE,background:isAm?"#f8faf8":"#fffaf6",border:`1.5px solid ${isAm?"#c8e0c8":"#e8d0b8"}`,borderRadius:12,padding:"10px 12px",flex:1}}>
-      <div style={{fontSize:11,fontWeight:700,color:isAm?AM_HEAD:PM_HEAD,marginBottom:6}}>{isAm?"🌱 AM":"☀️ PM"}</div>
-      {todos.length===0&&<div style={{fontSize:11,color:"#ddd",textAlign:"center",padding:"10px 0",fontStyle:"italic"}}>なし</div>}
-      {todos.map(t=>(
-        <div key={t.id} style={{...FONT_STYLE,background:"#fff",border:`${t.important?"2px solid #E24B4A":"1.5px solid #eee"}`,borderRadius:8,padding:"8px 10px",marginBottom:6,opacity:doneIds.has(t.id)?0.5:1}}>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <div style={{width:14,height:14,borderRadius:3,border:`2px solid ${doneIds.has(t.id)?(isAm?AM_ACCENT:PM_ACCENT):"#ddd"}`,background:doneIds.has(t.id)?(isAm?AM_ACCENT:PM_ACCENT):"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
-              {doneIds.has(t.id)&&<span style={{color:"#fff",fontSize:9,fontWeight:700}}>✓</span>}
-            </div>
-            <span style={{...FONT_STYLE,fontSize:t.important?13:12,fontWeight:t.important?700:400,color:doneIds.has(t.id)?"#bbb":t.important?"#791F1F":"#555",textDecoration:doneIds.has(t.id)?"line-through":"none",flex:1,wordBreak:"break-word"}}>{t.text}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-
-  const boardContent = useMemo(() => {
+  const boardContent = (()=>{
     if (tab !== "board") return null;
     const {cols,am,pm}=getWeekData(boardWeek);
     const isReadOnly=boardWeek===-1||boardWeek===-2;
@@ -1526,8 +1529,9 @@ function App() {
       </div>
     );
     return null;
-  }, [tab, boardWeek, layout, inbox, amCols, pmCols, amNext1, pmNext1, amNext2, pmNext2, amPrev1, pmPrev1, amPrev2, pmPrev2, doneIds]);
+  })();
 
+  if(authed) console.log("[App render] tab=",tab,"boardWeek=",boardWeek,"layout=",layout,"boardContent=",typeof boardContent);
   return (
     <div style={{...FONT_STYLE,height:layout==="stack"?"100dvh":"auto",minHeight:layout==="stack"?"unset":"100vh",background:"#f5f6f8",display:layout==="stack"?"flex":"block",flexDirection:"column",overflow:"hidden",boxSizing:"border-box"}}>
       <div style={{marginBottom:layout==="stack"?10:16,padding:layout==="stack"?"12px 12px 0":"0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
@@ -1626,7 +1630,20 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+class ErrorBoundary extends React.Component {
+  constructor(p){super(p);this.state={err:null};}
+  static getDerivedStateFromError(e){return {err:e};}
+  componentDidCatch(e,info){console.error("React Error:",e,info);}
+  render(){
+    if(this.state.err) return (
+      <div style={{padding:20,fontFamily:"monospace",background:"#fff0f0",color:"#cc0000",whiteSpace:"pre-wrap"}}>
+        <b>レンダリングエラー:</b>{String(this.state.err)}
+      </div>
+    );
+    return this.props.children;
+  }
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App/></ErrorBoundary>);
 </script>
 </body>
 </html>
