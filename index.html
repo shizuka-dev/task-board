@@ -1411,7 +1411,6 @@ function App() {
     reader.readAsText(file);
     e.target.value = ""; // 同じファイルを再選択できるようリセット
   };
-  };
 
   const ReadonlySlot = ({isAm, todos, doneIds}) => (
     <div style={{...FONT_STYLE,background:isAm?"#f8faf8":"#fffaf6",border:`1.5px solid ${isAm?"#c8e0c8":"#e8d0b8"}`,borderRadius:12,padding:"10px 12px",flex:1}}>
@@ -1430,8 +1429,8 @@ function App() {
     </div>
   );
 
-  let boardContent = null;
-  if (tab === "board") {
+  const boardContent = useMemo(() => {
+    if (tab !== "board") return null;
     const {cols,am,pm}=getWeekData(boardWeek);
     const isReadOnly=boardWeek===-1||boardWeek===-2;
     const wkAccents=[PINK,"#c9437a","#be4280","#b34186","#a8408c","#9e3f8e","#934090"];
@@ -1440,7 +1439,7 @@ function App() {
     const isToday=date=>date.toDateString()===TODAY.toDateString();
     if (isReadOnly) {
       if (layout==="stack") {
-        boardContent = (
+        return (
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             {cols.map((date,i)=>(
               <div key={i} style={{...FONT_STYLE,background:"#fff",border:"1.5px solid #e8e8e8",borderRadius:14,padding:"12px",opacity:0.88}}>
@@ -1454,7 +1453,7 @@ function App() {
           </div>
         );
       }
-      boardContent = (
+      return (
         <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:16,alignItems:"flex-start"}}>
           {cols.map((date,i)=>(
             <div key={i} style={{minWidth:240,width:260,flexShrink:0,...FONT_STYLE,background:"#fff",border:"1.5px solid #e8e8e8",borderRadius:14,padding:"12px",opacity:0.88}}>
@@ -1472,7 +1471,7 @@ function App() {
       );
     }
     if (layout==="stack") {
-      boardContent = (
+      return (
         <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
           <div style={{flexShrink:0,padding:"0 12px",background:"#f5f6f8"}}>
             {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>}
@@ -1498,7 +1497,7 @@ function App() {
         </div>
       );
     }
-    boardContent = (
+    return (
       <div style={{flex:1,display:"flex",overflow:"hidden"}}>
         {boardWeek===0 && (
           <div style={{width:250,flexShrink:0,display:"flex",flexDirection:"column",gap:10,padding:"0 0 20px 0",borderRight:"1px solid #e8e8e8",overflowY:"auto"}}>
@@ -1526,7 +1525,8 @@ function App() {
         </div>
       </div>
     );
-  }
+    return null;
+  }, [tab, boardWeek, layout, inbox, amCols, pmCols, amNext1, pmNext1, amNext2, pmNext2, amPrev1, pmPrev1, amPrev2, pmPrev2, doneIds]);
 
   return (
     <div style={{...FONT_STYLE,height:layout==="stack"?"100dvh":"auto",minHeight:layout==="stack"?"unset":"100vh",background:"#f5f6f8",display:layout==="stack"?"flex":"block",flexDirection:"column",overflow:"hidden",boxSizing:"border-box"}}>
@@ -1624,6 +1624,7 @@ function App() {
       {showModal&&editTodo && <EditModal todo={editTodo.todo} onSave={handleSave} onClose={()=>{setShowModal(false);setEditTodo(null);}}/>}
     </div>
   );
+}
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
