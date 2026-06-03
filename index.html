@@ -523,12 +523,11 @@ function DayColumn({ dayIndex, date, amTodos, pmTodos, accent, isToday, doneIds,
 function InboxColumn({ todos, doneIds, onEdit, onDelete, onToggle, onAdd, sortDrag }) {
   const sorted = useMemo(()=>[...todos].sort((a,b)=>(b.important?1:0)-(a.important?1:0)), [todos]);
   return (
-    <div style={{...FONT_STYLE,background:"#fff",border:"1.5px solid #e2e2e2",borderRadius:14,padding:"16px 14px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+    <div style={{...FONT_STYLE,background:"#fff",border:"1.5px solid #e2e2e2",borderRadius:14,padding:"16px 14px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",boxSizing:"border-box",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
         <div style={{width:3,height:16,background:PINK,borderRadius:2}}/>
         <span style={{...FONT_STYLE,fontSize:14,fontWeight:700,color:"#111"}}>ストック</span>
       </div>
-      <div style={{...FONT_STYLE,fontSize:11,color:"#aaa",marginLeft:9,marginBottom:12}}>とりあえずためておく場所</div>
       <div style={{height:1,background:"#f0f0f0",marginBottom:12}}/>
       {sorted.length===0 && <div style={{...FONT_STYLE,fontSize:12,color:"#ccc",textAlign:"center",padding:"18px 0",fontStyle:"italic"}}>タスクなし</div>}
       {sorted.map((todo,i)=><TodoCard key={todo.id} todo={todo} sortIdx={i} colId="inbox" isDone={doneIds.has(todo.id)} isAm={false} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle} sortDrag={sortDrag}/>)}
@@ -586,7 +585,7 @@ function QuickEntry({ onAdd, dateCols }) {
   const chipStyle = (color,bg) => ({...FONT_STYLE,display:"inline-flex",alignItems:"center",padding:"4px 9px",borderRadius:99,fontSize:11,fontWeight:700,cursor:"pointer",border:"1px solid",background:bg,color,borderColor:color+"55",whiteSpace:"nowrap",userSelect:"none"});
 
   return (
-    <div style={{...FONT_STYLE,background:"#fff",border:`1.5px solid ${focused?PINK:"#d8d8d8"}`,borderRadius:12,padding:"14px 16px",marginBottom:12,boxShadow:focused?`0 0 0 3px ${PINK_LIGHT}`:"0 1px 3px rgba(0,0,0,.06)"}}>
+    <div style={{...FONT_STYLE,background:"#fff",border:`1.5px solid ${focused?PINK:"#d8d8d8"}`,borderRadius:12,padding:"14px 16px",marginBottom:12,boxShadow:focused?`0 0 0 3px ${PINK_LIGHT}`:"0 1px 3px rgba(0,0,0,.06)",boxSizing:"border-box",width:"100%",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
         <span style={{fontSize:12,fontWeight:700,color:PINK}}>⚡ クイック入力</span>
         <span style={{fontSize:10,color:"#bbb",marginLeft:"auto"}}>⌘Enter</span>
@@ -1483,7 +1482,7 @@ function App() {
     }
     if (layout==="stack") {
       return (
-        <div style={{overflowY:"auto",WebkitOverflowScrolling:"touch",flex:1,padding:"0 12px 32px"}}>
+        <div style={{overflowY:"auto",WebkitOverflowScrolling:"touch",flex:1,padding:"0 10px 32px",boxSizing:"border-box"}}>
             {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>}
             {boardWeek===0 && <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>}
             {boardWeek!==0 && <div style={{padding:"4px 0 6px",fontSize:11,color:"#aaa"}}>{isReadOnly?"👁 閲覧のみ — 過去の記録":""}</div>}
