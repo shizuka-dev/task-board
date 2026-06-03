@@ -1528,7 +1528,7 @@ function App() {
 
   return (
     <div style={{...FONT_STYLE,height:layout==="stack"?"100dvh":"auto",minHeight:layout==="stack"?"unset":"100vh",background:"#f5f6f8",display:layout==="stack"?"flex":"block",flexDirection:"column",overflow:"hidden",boxSizing:"border-box"}}>
-      <div style={{marginBottom:layout==="stack"?10:16,padding:layout==="stack"?"12px 12px 0":"0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+      <div style={{marginBottom:layout==="stack"?10:16,padding:layout==="stack"?"10px 10px 0":"0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
         <div style={{display:"flex",alignItems:"baseline",gap:20}}>
           <h1 style={{...FONT_STYLE,margin:0,fontSize:20,fontWeight:700,color:"#0d0d0d"}}>Task Board</h1>
           <div style={{...FONT_STYLE,fontSize:13,color:"#0d0d0d"}}>{new Date().getFullYear()}年{new Date().getMonth()+1}月{new Date().getDate()}日 ({DAYS_JP[new Date().getDay()]})</div>
