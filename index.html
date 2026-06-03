@@ -116,7 +116,17 @@ function getTodayColIndex(dateCols) {
   return dateCols.findIndex(d => d.toDateString() === today.toDateString());
 }
 function fmtDate(d) { return `${d.getMonth()+1}/${d.getDate()}`; }
-function getDayLabel(i) { return i===0?"今日":i===1?"明日":i===2?"明後日":`${i}日後`; }
+function getDayLabel(i, date) {
+  if (!date) { return i===0?"今日":i===1?"明日":i===2?"明後日":`${i}日後`; }
+  const t=new Date(); t.setHours(0,0,0,0);
+  const diff=Math.round((date-t)/86400000);
+  if (diff===0) return "今日";
+  if (diff===1) return "明日";
+  if (diff===2) return "明後日";
+  if (diff===-1) return "昨日";
+  if (diff<0) return `${-diff}日前`;
+  return fmtDate(date);
+}
 function genId() { return typeof crypto.randomUUID === "function" ? crypto.randomUUID() : ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16)); }
 function stampTodo(t) { return { createdAt: Date.now(), lastCheckedAt: null, genre: null, ...t }; }
 function isOverdue(todo, doneIds) {
@@ -507,7 +517,7 @@ function DayColumn({ dayIndex, date, amTodos, pmTodos, accent, isToday, doneIds,
       <div style={{marginBottom:4}}>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           <div style={{width:3,height:16,background:accent,borderRadius:2}}/>
-          <span style={{...FONT_STYLE,fontSize:13,fontWeight:isToday?700:400,color:isToday?PINK:"#111"}}>{getDayLabel(dayIndex)}</span>
+          <span style={{...FONT_STYLE,fontSize:13,fontWeight:isToday?700:400,color:isToday?PINK:"#111"}}>{getDayLabel(dayIndex,date)}</span>
         </div>
         <div style={{...FONT_STYLE,fontSize:15,fontWeight:700,color:isToday?PINK:"#111",marginTop:3,marginLeft:9}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</div>
       </div>
