@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Task Board</title>
+<title>Task Board v36a02df8</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -582,10 +582,11 @@ function QuickEntry({ onAdd, dateCols }) {
     requestAnimationFrame(()=>{ ta.focus(); ta.setSelectionRange(s+insert.length,s+insert.length); });
   };
 
-  const chipStyle = (color,bg) => ({...FONT_STYLE,display:"inline-flex",alignItems:"center",padding:"4px 9px",borderRadius:99,fontSize:11,fontWeight:700,cursor:"pointer",border:"1px solid",background:bg,color,borderColor:color+"55",whiteSpace:"nowrap",userSelect:"none"});
+  const isMobile = window.innerWidth < 720;
+  const chipStyle = (color,bg) => ({...FONT_STYLE,display:"inline-flex",alignItems:"center",padding:isMobile?"4px 8px":"4px 9px",borderRadius:99,fontSize:isMobile?10:11,fontWeight:700,cursor:"pointer",border:"1px solid",background:bg,color,borderColor:color+"55",whiteSpace:"nowrap",userSelect:"none"});
 
   return (
-    <div style={{...FONT_STYLE,background:"#fff",border:`1.5px solid ${focused?PINK:"#d8d8d8"}`,borderRadius:12,padding:"14px 16px",marginBottom:12,boxShadow:focused?`0 0 0 3px ${PINK_LIGHT}`:"0 1px 3px rgba(0,0,0,.06)",boxSizing:"border-box",width:"100%",overflow:"hidden"}}>
+    <div style={{...FONT_STYLE,background:"#fff",border:`1.5px solid ${focused?PINK:"#d8d8d8"}`,borderRadius:12,padding:window.innerWidth<720?"10px 12px":"14px 16px",marginBottom:12,boxShadow:focused?`0 0 0 3px ${PINK_LIGHT}`:"0 1px 3px rgba(0,0,0,.06)",boxSizing:"border-box",width:"100%",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
         <span style={{fontSize:12,fontWeight:700,color:PINK}}>⚡ クイック入力</span>
         <span style={{fontSize:10,color:"#bbb",marginLeft:"auto"}}>⌘Enter</span>
@@ -598,9 +599,9 @@ function QuickEntry({ onAdd, dateCols }) {
         style={{...FONT_STYLE,width:"100%",background:"#f7f7f7",border:"1.5px solid #e8e8e8",borderRadius:6,padding:"9px 11px",fontSize:13,color:"#333",lineHeight:1.6,resize:"none",outline:"none",boxSizing:"border-box"}}/>
 
       {/* ① ヒントチップ：横スクロール1行 */}
-      <div style={{display:"flex",gap:5,overflowX:"auto",marginTop:7,paddingBottom:2,WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none"}}>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
         {HINT_CHIPS.map(ch=>(
-          <span key={ch.label} onClick={()=>insertChip(ch.insert)} style={{...chipStyle(ch.color,ch.bg),flexShrink:0}}>{ch.label}</span>
+          <span key={ch.label} onClick={()=>insertChip(ch.insert)} style={{...chipStyle(ch.color,ch.bg)}}>{ch.label}</span>
         ))}
       </div>
 
@@ -1527,7 +1528,7 @@ function App() {
 
   return (
     <div style={{...FONT_STYLE,height:layout==="stack"?"100dvh":"auto",minHeight:layout==="stack"?"unset":"100vh",background:"#f5f6f8",display:layout==="stack"?"flex":"block",flexDirection:"column",overflow:"hidden",boxSizing:"border-box"}}>
-      <div style={{marginBottom:layout==="stack"?10:16,padding:layout==="stack"?"10px 10px 0":"0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+      <div style={{marginBottom:layout==="stack"?10:16,padding:layout==="stack"?"10px 10px 0":"0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,flexWrap:layout==="stack"?"wrap":"nowrap",gap:6}}>
         <div style={{display:"flex",alignItems:"baseline",gap:20}}>
           <h1 style={{...FONT_STYLE,margin:0,fontSize:20,fontWeight:700,color:"#0d0d0d"}}>Task Board</h1>
           <div style={{...FONT_STYLE,fontSize:13,color:"#0d0d0d"}}>{new Date().getFullYear()}年{new Date().getMonth()+1}月{new Date().getDate()}日 ({DAYS_JP[new Date().getDay()]})</div>
