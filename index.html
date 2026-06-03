@@ -131,6 +131,8 @@ function genId() { return typeof crypto.randomUUID === "function" ? crypto.rando
 function stampTodo(t) { return { createdAt: Date.now(), lastCheckedAt: null, genre: null, ...t }; }
 function isOverdue(todo, doneIds) {
   if (doneIds.has(todo.id)) return false;
+  if (todo.routineDefId) return false; // ルーティンタスクは積み残し対象外
+  if (todo.routine) return false;      // クイック入力ルーティンも除外
   const ref = todo.lastCheckedAt ?? todo.createdAt;
   if (!ref) return true; // 日付不明は積み残し扱い
   return (Date.now() - ref) > OVERDUE_DAYS * 86400000;
@@ -391,7 +393,7 @@ function EditModal({ todo, onSave, onClose }) {
         <div style={{width:40,height:4,background:"#ddd",borderRadius:2,margin:"0 auto 20px"}}/>
         <div style={{fontSize:12,fontWeight:700,color:PINK,marginBottom:14}}>{todo?.id?"タスクを編集":"新しいタスク"}</div>
         <textarea value={text} onChange={e=>setText(e.target.value)} autoFocus placeholder="タスクの内容..."
-          style={{...FONT_STYLE,width:"100%",background:"#f7f7f7",border:"1.5px solid #e0e0e0",borderRadius:8,color:"#111",padding:"12px 14px",fontSize:15,resize:"none",minHeight:70,outline:"none",boxSizing:"border-box"}}/>
+          style={{...FONT_STYLE,width:"100%",background:"#f7f7f7",border:"1.5px solid #e0e0e0",borderRadius:8,color:"#111",padding:"12px 14px",fontSize:16,resize:"none",minHeight:70,outline:"none",boxSizing:"border-box"}}/>
         {/* 重要トグル */}
         <div onClick={()=>setImportant(p=>!p)}
           style={{marginTop:14,display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:10,cursor:"pointer",background:important?"#FCEBEB":"#f7f7f7",border:`1.5px solid ${important?IMP_RED:"#e0e0e0"}`,transition:"all .15s"}}>
@@ -411,8 +413,8 @@ function EditModal({ todo, onSave, onClose }) {
             ))}
           </div>
           {rtype==="weekly" && <div style={{display:"flex",gap:8,marginTop:14,flexWrap:"wrap"}}>{DAYS_JP.map((d,i)=><button key={i} onClick={()=>togDay(i)} style={{...FONT_STYLE,width:40,height:40,borderRadius:8,fontSize:14,cursor:"pointer",fontWeight:700,background:wdays.includes(i)?"#0d0d0d":"#f5f5f5",border:`1.5px solid ${wdays.includes(i)?"#0d0d0d":"#ddd"}`,color:wdays.includes(i)?"#fff":i===0?"#e03030":i===6?PINK:"#444"}}>{d}</button>)}</div>}
-          {rtype==="monthly" && <div style={{display:"flex",alignItems:"center",gap:10,marginTop:14}}><span style={{fontSize:13,color:"#666"}}>毎月</span><input type="number" min="1" max="31" value={mday} onChange={e=>setMday(+e.target.value)} style={{...inp,width:64}}/><span style={{fontSize:13,color:"#666"}}>日</span></div>}
-          {rtype==="date" && <div style={{display:"flex",alignItems:"center",gap:8,marginTop:14}}><input type="number" min="1" max="12" value={dm} onChange={e=>setDm(+e.target.value)} style={{...inp,width:58}}/><span style={{fontSize:13,color:"#666"}}>月</span><input type="number" min="1" max="31" value={dd} onChange={e=>setDd(+e.target.value)} style={{...inp,width:58}}/><span style={{fontSize:13,color:"#666"}}>日</span></div>}
+          {rtype==="monthly" && <div style={{display:"flex",alignItems:"center",gap:10,marginTop:14}}><span style={{fontSize:16,color:"#666"}}>毎月</span><input type="number" min="1" max="31" value={mday} onChange={e=>setMday(+e.target.value)} style={{...inp,width:64}}/><span style={{fontSize:16,color:"#666"}}>日</span></div>}
+          {rtype==="date" && <div style={{display:"flex",alignItems:"center",gap:8,marginTop:14}}><input type="number" min="1" max="12" value={dm} onChange={e=>setDm(+e.target.value)} style={{...inp,width:58}}/><span style={{fontSize:16,color:"#666"}}>月</span><input type="number" min="1" max="31" value={dd} onChange={e=>setDd(+e.target.value)} style={{...inp,width:58}}/><span style={{fontSize:16,color:"#666"}}>日</span></div>}
           {rtype!=="none" && (
             <div style={{marginTop:14}}>
               <div style={{fontSize:11,fontWeight:700,color:"#aaa",marginBottom:8}}>時間帯</div>
@@ -688,6 +690,10 @@ function WeeklyReview({ allTodos, doneIds, dateCols, onApply }) {
   const [classifying,setClassifying]=useState(false), [suggesting,setSuggesting]=useState(false), [step,setStep]=useState("list");
   const getGenre = t => genres[t.id]??t.genre??null;
   const runClassify = async () => { setClassifying(true); const r=await classifyGenres(overdue.filter(t=>!getGenre(t))); setGenres(p=>({...p,...r})); setClassifying(false); setStep("classified"); };
+  // 開いた時点で自動分類
+  useEffect(()=>{
+    if (overdue.length > 0 && step === "list") { runClassify(); }
+  }, []);
   const runSuggest = async () => { setSuggesting(true); const r=await suggestRedistribution(overdue.map(t=>({...t,genre:getGenre(t)||"other"})),dateCols); setProposals(r); setApproved(new Set(r.map(p=>p.id))); setSuggesting(false); setStep("proposed"); };
   const togApprove = id => setApproved(p=>{const n=new Set(p);n.has(id)?n.delete(id):n.add(id);return n;});
   const applyProposals = () => { onApply(proposals.filter(p=>approved.has(p.id)).map(p=>({todo:{...overdue.find(t=>t.id===p.id),genre:getGenre(overdue.find(t=>t.id===p.id))||"other"},colId:`d${p.day}-${p.slot}`}))); setStep("done"); };
@@ -817,13 +823,13 @@ function RoutineManager({ routines, onAdd, onUpdate, onDelete, onToggle }) {
             <div style={{width:40,height:4,background:"#ddd",borderRadius:2,margin:"0 auto 20px"}}/>
             <div style={{fontSize:13,fontWeight:700,color:PINK,marginBottom:14}}>{editDef?.id?"ルーティンを編集":"新しいルーティン"}</div>
             <div style={{fontSize:11,fontWeight:700,color:"#aaa",marginBottom:6}}>タスク名</div>
-            <input value={text} onChange={e=>setText(e.target.value)} placeholder="タスクの内容..." style={{...inp,width:"100%",boxSizing:"border-box",marginBottom:16,fontSize:14,padding:"10px 12px"}}/>
+            <input value={text} onChange={e=>setText(e.target.value)} placeholder="タスクの内容..." style={{...inp,width:"100%",boxSizing:"border-box",marginBottom:16,fontSize:16,padding:"10px 12px"}}/>
             <div style={{fontSize:11,fontWeight:700,color:"#aaa",marginBottom:8}}>繰り返し</div>
             <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
               {[["daily","毎日"],["weekly","毎週"],["monthly","毎月"]].map(([v,l])=><button key={v} onClick={()=>setRtype(v)} style={btn(rtype===v)}>{l}</button>)}
             </div>
             {rtype==="weekly" && <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>{DAYS_JP.map((d,i)=><button key={i} onClick={()=>togDay(i)} style={{...FONT_STYLE,width:40,height:40,borderRadius:8,fontSize:14,cursor:"pointer",fontWeight:700,background:wdays.includes(i)?"#0d0d0d":"#f5f5f5",border:`1.5px solid ${wdays.includes(i)?"#0d0d0d":"#ddd"}`,color:wdays.includes(i)?"#fff":i===0?"#e03030":i===6?PINK:"#444"}}>{d}</button>)}</div>}
-            {rtype==="monthly" && <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}><span style={{fontSize:13,color:"#666"}}>毎月</span><input type="number" min="1" max="31" value={mday} onChange={e=>setMday(+e.target.value)} style={{...inp,width:64}}/><span style={{fontSize:13,color:"#666"}}>日</span></div>}
+            {rtype==="monthly" && <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}><span style={{fontSize:16,color:"#666"}}>毎月</span><input type="number" min="1" max="31" value={mday} onChange={e=>setMday(+e.target.value)} style={{...inp,width:64}}/><span style={{fontSize:16,color:"#666"}}>日</span></div>}
             <div style={{fontSize:11,fontWeight:700,color:"#aaa",marginBottom:8}}>時間帯</div>
             <div style={{display:"flex",gap:8,marginBottom:16}}>{[["am","🌱 AM"],["pm","☀️ PM"]].map(([v,l])=><button key={v} onClick={()=>setSlot(v)} style={btn(slot===v)}>{l}</button>)}</div>
             <div style={{fontSize:11,fontWeight:700,color:"#aaa",marginBottom:8}}>有効期限（なし＝無期限）</div>
@@ -1508,9 +1514,8 @@ function App() {
     return (
       <div style={{flex:1,display:"flex",overflow:"hidden"}}>
         {boardWeek===0 && (
-          <div style={{width:250,flexShrink:0,display:"flex",flexDirection:"column",gap:10,padding:"0 0 20px 0",borderRight:"1px solid #e8e8e8",overflowY:"auto"}}>
+          <div style={{width:220,flexShrink:0,display:"flex",flexDirection:"column",gap:10,padding:"0 0 20px 0",borderRight:"1px solid #e8e8e8",overflowY:"auto"}}>
             <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>
-            <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>
           </div>
         )}
         <div style={{flex:1,overflowX:"auto",overflowY:"auto",padding:"0 0 24px 14px",WebkitOverflowScrolling:"touch"}}>
@@ -1546,9 +1551,10 @@ function App() {
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           {/* PC時のみタブをヘッダー右に表示 */}
-          {layout!=="stack" && [["board","📋 ボード"],["routines","🔁 管理"],["review","⏰ レビュー"],["trash","🗑"],["guide","📖"]].map(([key,label])=>(
+          {layout!=="stack" && [["board","📋 ボード"],["inbox","📥 ストック"],["routines","🔁 管理"],["review","⏰ レビュー"],["trash","🗑"],["guide","📖"]].map(([key,label])=>(
             <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"5px 11px",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",border:"1.5px solid",position:"relative",flexShrink:0,background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0"}}>
               {label}
+              {key==="inbox"&&inbox.length>0 && badge(inbox.length,PINK)}
               {key==="review"&&overdueCnt>0 && badge(overdueCnt,PINK)}
               {key==="routines"&&routines.filter(r=>r.active).length>0 && badge(routines.filter(r=>r.active).length,"#555")}
               {key==="trash"&&trash.length>0 && badge(trash.length,"#aaa")}
@@ -1595,7 +1601,7 @@ function App() {
       {/* ── メインタブ：スマホのみ表示（PC はヘッダー右に統合済み） ── */}
       {layout==="stack" && (
         <div style={{display:"flex",gap:6,marginBottom:tab==="board"?6:16,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none",flexShrink:0,padding:"0 12px"}}>
-          {[["board","📋"],["routines","🔁"],["review","⏰"],["trash","🗑"],["guide","📖"]].map(([key,icon])=>(
+          {[["board","📋"],["inbox","📥"],["routines","🔁"],["review","⏰"],["trash","🗑"],["guide","📖"]].map(([key,icon])=>(
             <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"7px 13px",borderRadius:8,fontSize:16,cursor:"pointer",border:"1.5px solid",flexShrink:0,position:"relative",background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0"}}>
               {icon}
               {key==="review"&&overdueCnt>0 && badge(overdueCnt,PINK)}
@@ -1626,6 +1632,7 @@ function App() {
       :tab==="trash" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><TrashBin trash={trash} onRestore={handleRestore} onPermanentDelete={id=>setTrash(p=>p.filter(t=>t.id!==id))} onClearAll={()=>setTrash([])}/></div>
       :tab==="routines" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><RoutineManager routines={routines} onAdd={handleAddRoutine} onUpdate={handleUpdateRoutine} onDelete={handleDeleteRoutine} onToggle={handleToggleRoutine}/></div>
       :tab==="review" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><WeeklyReview allTodos={allTodos} doneIds={doneIds} dateCols={dateCols} onApply={handleApplyReview}/></div>
+      :tab==="inbox" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><InboxPage todos={inbox} {...sp} onAdd={()=>handleAdd("inbox")} onQuickAdd={handleQuickAdd} dateCols={dateCols}/></div>
 
       :boardContent}
       {layout!=="stack" && <div style={{...FONT_STYLE,marginTop:14,fontSize:11,color:"#bbb"}}>💡 ✏️ 編集から重要マーク設定、ドラッグハンドルで並び替えができます</div>}
