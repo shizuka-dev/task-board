@@ -27,7 +27,6 @@ const _sb = window.supabase.createClient(
 const rawUser = new URLSearchParams(window.location.search).get("user") || "main";
 const urlUser = rawUser.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 32) || "main";
 const DB_ROW_ID = `user_${urlUser}`;
-const OVERDUE_DAYS = 7;
 const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
 
 async function hashPassword(pw) {
@@ -129,14 +128,7 @@ function getDayLabel(i, date) {
 }
 function genId() { return typeof crypto.randomUUID === "function" ? crypto.randomUUID() : ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16)); }
 function stampTodo(t) { return { createdAt: Date.now(), lastCheckedAt: null, genre: null, ...t }; }
-function isOverdue(todo, doneIds) {
-  if (doneIds.has(todo.id)) return false;
-  if (todo.routineDefId) return false; // ルーティンタスクは積み残し対象外
-  if (todo.routine) return false;      // クイック入力ルーティンも除外
-  const ref = todo.lastCheckedAt ?? todo.createdAt;
-  if (!ref) return true; // 日付不明は積み残し扱い
-  return (Date.now() - ref) > OVERDUE_DAYS * 86400000;
-}
+
 function routineLabel(r) {
   if (!r) return null;
   if (r.type==="daily") return "毎日";
@@ -556,22 +548,6 @@ function InboxPage({ todos, doneIds, onEdit, onDelete, onToggle, onAdd, sortDrag
   );
 }
 
-function InboxColumn({ todos, doneIds, onEdit, onDelete, onToggle, onAdd, sortDrag }) {
-  const sorted = useMemo(()=>[...todos].sort((a,b)=>(b.important?1:0)-(a.important?1:0)), [todos]);
-  return (
-    <div style={{...FONT_STYLE,background:"#fff",border:"1.5px solid #e2e2e2",borderRadius:14,padding:"16px 14px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",boxSizing:"border-box",overflow:"hidden"}}>
-      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-        <div style={{width:3,height:16,background:PINK,borderRadius:2}}/>
-        <span style={{...FONT_STYLE,fontSize:14,fontWeight:700,color:"#111"}}>ストック</span>
-      </div>
-      <div style={{height:1,background:"#f0f0f0",marginBottom:12}}/>
-      {sorted.length===0 && <div style={{...FONT_STYLE,fontSize:12,color:"#ccc",textAlign:"center",padding:"18px 0",fontStyle:"italic"}}>タスクなし</div>}
-      {sorted.map((todo,i)=><TodoCard key={todo.id} todo={todo} sortIdx={i} colId="inbox" isDone={doneIds.has(todo.id)} isAm={false} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle} sortDrag={sortDrag}/>)}
-      <button onClick={()=>onAdd("inbox")} style={{...FONT_STYLE,marginTop:8,width:"100%",padding:"8px",background:"#f7f7f7",border:"1.5px dashed #ddd",borderRadius:8,color:"#bbb",cursor:"pointer",fontSize:13,fontWeight:700}}>＋ 追加</button>
-    </div>
-  );
-}
-
 // ── QuickEntry ヒントチップ定義 ──
 const HINT_CHIPS = [
   { label:"毎日",    insert:"毎日 ",    color:PINK,      bg:PINK_LIGHT    },
@@ -664,8 +640,6 @@ function QuickEntry({ onAdd, dateCols }) {
   );
 }
 
-const GENRES=[{key:"work",label:"💼 仕事",color:"#2563b0",bg:"#e8f0fe"},{key:"home",label:"🏠 家事",color:"#b07020",bg:"#fef3e0"},{key:"health",label:"💪 健康",color:"#2a7a3a",bg:"#e4f5e4"},{key:"learn",label:"📚 学習",color:"#7030b0",bg:"#f3e8ff"},{key:"errand",label:"🛒 用事",color:"#c04060",bg:"#fce8f1"},{key:"other",label:"📌 その他",color:"#606060",bg:"#f0f0f0"}];
-const genreInfo = key => GENRES.find(g=>g.key===key) ?? GENRES[GENRES.length-1];
 // ルーティン同一性比較（JSON.stringifyのキー順序問題を回避）
 function sameRoutine(a, b) {
   if (!a || !b) return false;
