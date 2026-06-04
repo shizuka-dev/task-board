@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Task Board v36a02df8</title>
+<title>Task Board v12cc2639</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -532,6 +532,30 @@ function DayColumn({ dayIndex, date, amTodos, pmTodos, accent, isToday, doneIds,
   );
 }
 
+function InboxPage({ todos, doneIds, onEdit, onDelete, onToggle, onAdd, sortDrag, onQuickAdd, dateCols }) {
+  const sorted = useMemo(()=>[...todos].sort((a,b)=>(b.important?1:0)-(a.important?1:0)), [todos]);
+  return (
+    <div style={{...FONT_STYLE,maxWidth:640,margin:"0 auto"}}>
+      <div style={{marginBottom:14}}>
+        <QuickEntry onAdd={onQuickAdd} dateCols={dateCols}/>
+      </div>
+      <div style={{...FONT_STYLE,background:"#fff",border:"1.5px solid #e2e2e2",borderRadius:14,padding:"16px 14px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:12}}>
+          <div style={{width:3,height:16,background:PINK,borderRadius:2}}/>
+          <span style={{...FONT_STYLE,fontSize:14,fontWeight:700,color:"#111"}}>ストック</span>
+          <span style={{...FONT_STYLE,fontSize:11,color:"#aaa",marginLeft:4}}>とりあえずためておく場所</span>
+        </div>
+        <div style={{height:1,background:"#f0f0f0",marginBottom:12}}/>
+        {sorted.length===0 && <div style={{...FONT_STYLE,fontSize:12,color:"#ccc",textAlign:"center",padding:"24px 0"}}>タスクがありません</div>}
+        {sorted.map(t=>(
+          <TodoCard key={t.id} todo={t} colId="inbox" doneIds={doneIds} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle} sortDrag={sortDrag}/>
+        ))}
+        <button onClick={onAdd} style={{...FONT_STYLE,marginTop:8,width:"100%",padding:"8px",background:"transparent",border:"1.5px dashed #ccc",borderRadius:8,color:"#aaa",fontSize:12,fontWeight:700,cursor:"pointer"}}>＋ 追加</button>
+      </div>
+    </div>
+  );
+}
+
 function InboxColumn({ todos, doneIds, onEdit, onDelete, onToggle, onAdd, sortDrag }) {
   const sorted = useMemo(()=>[...todos].sort((a,b)=>(b.important?1:0)-(a.important?1:0)), [todos]);
   return (
@@ -640,7 +664,6 @@ function QuickEntry({ onAdd, dateCols }) {
   );
 }
 
-// ── Genre & AI (Weekly Review) ────────────────────────────────────────────────
 const GENRES=[{key:"work",label:"💼 仕事",color:"#2563b0",bg:"#e8f0fe"},{key:"home",label:"🏠 家事",color:"#b07020",bg:"#fef3e0"},{key:"health",label:"💪 健康",color:"#2a7a3a",bg:"#e4f5e4"},{key:"learn",label:"📚 学習",color:"#7030b0",bg:"#f3e8ff"},{key:"errand",label:"🛒 用事",color:"#c04060",bg:"#fce8f1"},{key:"other",label:"📌 その他",color:"#606060",bg:"#f0f0f0"}];
 const genreInfo = key => GENRES.find(g=>g.key===key) ?? GENRES[GENRES.length-1];
 // ルーティン同一性比較（JSON.stringifyのキー順序問題を回避）
@@ -651,115 +674,6 @@ function sameRoutine(a, b) {
   if (a.type === "monthly") return a.day === b.day;
   if (a.type === "date") return a.month === b.month && a.day === b.day;
   return true; // daily
-}
-
-async function aiRequest(prompt) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000); // 30秒タイムアウト
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": "", "anthropic-version": "2023-06-01" },
-      signal: controller.signal,
-      body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000, messages:[{role:"user",content:prompt}] })
-    });
-    const data = await res.json();
-    return data.content?.map(c=>c.text||"").join("") || "";
-  } catch(e) {
-    if (e.name === "AbortError") throw new Error("AIリクエストがタイムアウトしました");
-    throw e;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-async function classifyGenres(todos) {
-  if (!todos.length) return {};
-  const text=await aiRequest(`以下のタスクをwork/home/health/learn/errand/otherに分類。JSONのみ返す。例:{"id1":"work"}\n${todos.map(t=>`${t.id}: ${t.text}`).join("\n")}`);
-  try { return JSON.parse(text.replace(/```json|```/g,"").trim()); } catch { return {}; }
-}
-async function suggestRedistribution(todos, dateCols) {
-  if (!todos.length) return [];
-  const days=dateCols.map((d,i)=>`${getDayLabel(i)}(${fmtDate(d)})`).join(", ");
-  const text=await aiRequest(`以下の積み残しタスクを来週(${days})に再分配。JSON配列のみ返す。例:[{"id":"x","day":0,"slot":"am","reason":"理由"}]\n${todos.map(t=>`${t.id}: ${t.text}(${genreInfo(t.genre||"other").label})`).join("\n")}`);
-  try { return JSON.parse(text.replace(/```json|```/g,"").trim()); } catch { return []; }
-}
-
-function WeeklyReview({ allTodos, doneIds, dateCols, onApply }) {
-  const overdue=allTodos.filter(t=>isOverdue(t,doneIds));
-  const [genres,setGenres]=useState({}), [proposals,setProposals]=useState([]), [approved,setApproved]=useState(new Set());
-  const [classifying,setClassifying]=useState(false), [suggesting,setSuggesting]=useState(false), [step,setStep]=useState("list");
-  const getGenre = t => genres[t.id]??t.genre??null;
-  const runClassify = async () => { setClassifying(true); const r=await classifyGenres(overdue.filter(t=>!getGenre(t))); setGenres(p=>({...p,...r})); setClassifying(false); setStep("classified"); };
-  // 開いた時点で自動分類
-  useEffect(()=>{
-    if (overdue.length > 0 && step === "list") { runClassify(); }
-  }, []);
-  const runSuggest = async () => { setSuggesting(true); const r=await suggestRedistribution(overdue.map(t=>({...t,genre:getGenre(t)||"other"})),dateCols); setProposals(r); setApproved(new Set(r.map(p=>p.id))); setSuggesting(false); setStep("proposed"); };
-  const togApprove = id => setApproved(p=>{const n=new Set(p);n.has(id)?n.delete(id):n.add(id);return n;});
-  const applyProposals = () => { onApply(proposals.filter(p=>approved.has(p.id)).map(p=>({todo:{...overdue.find(t=>t.id===p.id),genre:getGenre(overdue.find(t=>t.id===p.id))||"other"},colId:`d${p.day}-${p.slot}`}))); setStep("done"); };
-  const byGenre=GENRES.map(g=>({...g,todos:overdue.filter(t=>(getGenre(t)||"other")===g.key)})).filter(g=>g.todos.length>0);
-  const card={background:"#fff",border:"1.5px solid #e2e2e2",borderRadius:14,padding:"16px 18px",marginBottom:14};
-  const bigBtn=(label,onClick,disabled)=><button onClick={onClick} disabled={disabled} style={{...FONT_STYLE,marginTop:14,width:"100%",padding:"11px",background:"#0d0d0d",color:"#fff",fontWeight:700,fontSize:13,borderRadius:8,border:"none",cursor:"pointer"}}>{label}</button>;
-  return (
-    <div style={{...FONT_STYLE,maxWidth:640,margin:"0 auto"}}>
-      <div style={{background:overdue.length?"#fff8f0":"#f2faf2",border:`1.5px solid ${overdue.length?"#f5a55a":"#8ed08e"}`,borderRadius:14,padding:"16px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:14}}>
-        <div style={{fontSize:32}}>{overdue.length?"⏰":"✅"}</div>
-        <div>
-          <div style={{...FONT_STYLE,fontSize:16,fontWeight:700,color:"#111"}}>{overdue.length?`${overdue.length}件の積み残し`:"積み残しはありません 🎉"}</div>
-          <div style={{...FONT_STYLE,fontSize:11,color:"#888",marginTop:3}}>{overdue.length?`${OVERDUE_DAYS}日以上チェックなし`:"すべてのタスクが期限内です"}</div>
-        </div>
-      </div>
-      {overdue.length>0 && <>
-        {step==="list" && <div style={card}>
-          <div style={{...FONT_STYLE,fontSize:13,fontWeight:700,color:"#333",marginBottom:12}}>📋 積み残し一覧</div>
-          {overdue.map(t=><div key={t.id} style={{display:"flex",padding:"8px 0",borderBottom:"1px solid #f4f4f4"}}><span style={{fontSize:13,color:"#111"}}>{t.text}</span></div>)}
-          {bigBtn(classifying?"AIが分類中…":"✨ AIでジャンル分類する", runClassify, classifying)}
-        </div>}
-        {(step==="classified"||step==="proposed") && <div style={{marginBottom:14}}>
-          <div style={{...FONT_STYLE,fontSize:13,fontWeight:700,color:"#333",marginBottom:10}}>🏷 ジャンル別 積み残し</div>
-          {byGenre.map(g=>(
-            <div key={g.key} style={{background:"#fff",border:`1.5px solid ${g.color}40`,borderRadius:12,padding:"12px 14px",marginBottom:10}}>
-              <div style={{...FONT_STYLE,fontSize:12,fontWeight:700,color:g.color,marginBottom:8}}>{g.label} — {g.todos.length}件</div>
-              {g.todos.map(t=>(
-                <div key={t.id} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid #f8f8f8"}}>
-                  <span style={{fontSize:13,color:"#111",flex:1}}>{t.text}</span>
-                  <select value={getGenre(t)||"other"} onChange={e=>setGenres(p=>({...p,[t.id]:e.target.value}))} style={{...FONT_STYLE,fontSize:11,border:"1.5px solid #ddd",borderRadius:6,padding:"3px 6px",color:"#555",background:"#fafafa"}}>
-                    {GENRES.map(gg=><option key={gg.key} value={gg.key}>{gg.label}</option>)}
-                  </select>
-                </div>
-              ))}
-            </div>
-          ))}
-          {step==="classified" && bigBtn(suggesting?"AIが計画作成中…":"📅 来週への再分配を提案", runSuggest, suggesting)}
-        </div>}
-        {step==="proposed" && proposals.length>0 && <div style={card}>
-          <div style={{...FONT_STYLE,fontSize:13,fontWeight:700,color:"#333",marginBottom:12}}>📅 AIの再分配提案</div>
-          {proposals.map(p=>{
-            const todo=overdue.find(t=>t.id===p.id), g=genreInfo(getGenre(todo)||"other"), ok=approved.has(p.id);
-            return (
-              <div key={p.id} onClick={()=>togApprove(p.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,marginBottom:8,cursor:"pointer",background:ok?"#f2faf2":"#fafafa",border:`1.5px solid ${ok?"#8ed08e":"#ebebeb"}`}}>
-                <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${ok?"#3a9e3a":"#ccc"}`,background:ok?"#3a9e3a":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{ok&&<span style={{color:"#fff",fontSize:12,fontWeight:700}}>✓</span>}</div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{...FONT_STYLE,fontSize:13,fontWeight:500,color:"#111"}}>{todo?.text}</div>
-                  <div style={{...FONT_STYLE,fontSize:10,color:"#888",marginTop:2}}>{p.reason}</div>
-                </div>
-                <div style={{textAlign:"right",flexShrink:0}}>
-                  <div style={{fontSize:11,fontWeight:700,color:p.slot==="am"?AM_TEXT:PM_TEXT,background:p.slot==="am"?AM_LIGHT:PM_LIGHT,borderRadius:4,padding:"2px 7px"}}>{getDayLabel(p.day)} {p.slot==="am"?"🌱AM":"☀️PM"}</div>
-                  <div style={{fontSize:10,color:g.color,marginTop:3}}>{g.label}</div>
-                </div>
-              </div>
-            );
-          })}
-          <div style={{...FONT_STYLE,fontSize:11,color:"#aaa",marginBottom:12}}>チェックを外したタスクはストックに戻ります</div>
-          <button onClick={applyProposals} style={{...FONT_STYLE,width:"100%",padding:"11px",background:PINK,color:"#fff",fontWeight:700,fontSize:13,borderRadius:8,border:"none",cursor:"pointer"}}>✅ 承認してボードに反映（{approved.size}件）</button>
-        </div>}
-        {step==="done" && <div style={{background:"#f2faf2",border:"1.5px solid #8ed08e",borderRadius:14,padding:"20px",textAlign:"center"}}>
-          <div style={{fontSize:28,marginBottom:8}}>🎉</div>
-          <div style={{...FONT_STYLE,fontSize:15,fontWeight:700,color:"#2a6e2a"}}>再分配が完了しました！</div>
-        </div>}
-      </>}
-    </div>
-  );
 }
 
 function RoutineManager({ routines, onAdd, onUpdate, onDelete, onToggle }) {
@@ -1363,16 +1277,7 @@ function App() {
   const handleUpdateRoutine = def => { const next=routines.map(r=>r.id===def.id?def:r); setRoutines(next); const r=applyRoutineDef(next,amCols,pmCols); setAmCols(r.amCols); setPmCols(r.pmCols); };
   const handleDeleteRoutine = id => { setRoutines(p=>p.filter(r=>r.id!==id)); setAmCols(p=>p.map(c=>c.filter(t=>t.routineDefId!==id))); setPmCols(p=>p.map(c=>c.filter(t=>t.routineDefId!==id))); };
   const handleToggleRoutine = id => { const def=routines.find(r=>r.id===id); if(def) handleUpdateRoutine({...def,active:!def.active}); };
-  const handleApplyReview = proposals => {
-    proposals.forEach(({todo,colId})=>addToCol(stampTodo({...todo,id:genId(),createdAt:Date.now(),lastCheckedAt:null}),colId));
-    proposals.forEach(({todo})=>{
-      const upd=l=>l.map(t=>t.id===todo.id?{...t,genre:todo.genre}:t);
-      setInbox(upd);
-      setAmCols(p=>p.map(upd)); setPmCols(p=>p.map(upd));
-      setAmNext1(p=>p.map(upd)); setPmNext1(p=>p.map(upd));
-      setAmNext2(p=>p.map(upd)); setPmNext2(p=>p.map(upd));
-    });
-  };
+
 
   // Auth
   const handleAuth = async (pw, pw2) => {
@@ -1398,10 +1303,7 @@ function App() {
      ...amPrev2.flat(), ...pmPrev2.flat()],
     [inbox,amCols,pmCols,amNext1,pmNext1,amNext2,pmNext2,amPrev1,pmPrev1,amPrev2,pmPrev2]
   );
-  const overdueCnt = useMemo(() =>
-    allTodos.filter(t=>isOverdue(t,doneIds)).length,
-    [allTodos, doneIds]
-  );
+
   const TODAY = useMemo(()=>{ const d=new Date(); d.setHours(0,0,0,0); return d; }, []);
   const accents=[PINK,"#c9437a","#be4280","#b34186","#a8408c","#9e3f8e","#934090"];
   const sp={doneIds,onEdit:(t,c)=>handleEdit(t,c),onDelete:handleDelete,onToggle:handleToggle,onAdd:handleAdd,sortDrag};
@@ -1501,7 +1403,6 @@ function App() {
       return (
         <div style={{overflowY:"auto",WebkitOverflowScrolling:"touch",flex:1,padding:"0 10px 32px",boxSizing:"border-box"}}>
             {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>}
-            {boardWeek===0 && <InboxColumn todos={inbox} {...sp} onEdit={t=>handleEdit(t,"inbox")} onAdd={()=>handleAdd("inbox")}/>}
             {boardWeek!==0 && <div style={{padding:"4px 0 6px",fontSize:11,color:"#aaa"}}>{isReadOnly?"👁 閲覧のみ — 過去の記録":""}</div>}
             {cols.map((date,i)=>(
               <div key={i} style={{marginBottom:14}}>
@@ -1551,11 +1452,10 @@ function App() {
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           {/* PC時のみタブをヘッダー右に表示 */}
-          {layout!=="stack" && [["board","📋 ボード"],["inbox","📥 ストック"],["routines","🔁 管理"],["review","⏰ レビュー"],["trash","🗑"],["guide","📖"]].map(([key,label])=>(
+          {layout!=="stack" && [["board","📋 ボード"],["inbox","📥 ストック"],["routines","🔁 管理"],["trash","🗑"],["guide","📖"]].map(([key,label])=>(
             <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"5px 11px",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",border:"1.5px solid",position:"relative",flexShrink:0,background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0"}}>
               {label}
               {key==="inbox"&&inbox.length>0 && badge(inbox.length,PINK)}
-              {key==="review"&&overdueCnt>0 && badge(overdueCnt,PINK)}
               {key==="routines"&&routines.filter(r=>r.active).length>0 && badge(routines.filter(r=>r.active).length,"#555")}
               {key==="trash"&&trash.length>0 && badge(trash.length,"#aaa")}
             </button>
@@ -1601,10 +1501,9 @@ function App() {
       {/* ── メインタブ：スマホのみ表示（PC はヘッダー右に統合済み） ── */}
       {layout==="stack" && (
         <div style={{display:"flex",gap:6,marginBottom:tab==="board"?6:16,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none",flexShrink:0,padding:"0 12px"}}>
-          {[["board","📋"],["inbox","📥"],["routines","🔁"],["review","⏰"],["trash","🗑"],["guide","📖"]].map(([key,icon])=>(
+          {[["board","📋"],["inbox","📥"],["routines","🔁"],["trash","🗑"],["guide","📖"]].map(([key,icon])=>(
             <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"7px 13px",borderRadius:8,fontSize:16,cursor:"pointer",border:"1.5px solid",flexShrink:0,position:"relative",background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0"}}>
               {icon}
-              {key==="review"&&overdueCnt>0 && badge(overdueCnt,PINK)}
               {key==="routines"&&routines.filter(r=>r.active).length>0 && badge(routines.filter(r=>r.active).length,"#555")}
               {key==="trash"&&trash.length>0 && badge(trash.length,"#aaa")}
             </button>
@@ -1631,7 +1530,6 @@ function App() {
       {tab==="guide" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><QuickGuide/></div>
       :tab==="trash" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><TrashBin trash={trash} onRestore={handleRestore} onPermanentDelete={id=>setTrash(p=>p.filter(t=>t.id!==id))} onClearAll={()=>setTrash([])}/></div>
       :tab==="routines" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><RoutineManager routines={routines} onAdd={handleAddRoutine} onUpdate={handleUpdateRoutine} onDelete={handleDeleteRoutine} onToggle={handleToggleRoutine}/></div>
-      :tab==="review" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><WeeklyReview allTodos={allTodos} doneIds={doneIds} dateCols={dateCols} onApply={handleApplyReview}/></div>
       :tab==="inbox" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><InboxPage todos={inbox} {...sp} onAdd={()=>handleAdd("inbox")} onQuickAdd={handleQuickAdd} dateCols={dateCols}/></div>
 
       :boardContent}
