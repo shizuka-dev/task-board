@@ -1069,6 +1069,7 @@ function App() {
   const [savedHash,setSavedHash]=useState(null);
   const [authError,setAuthError]=useState("");
   const [tab,setTab]=useState("board");
+  const [selectedStackDay,setSelectedStackDay]=useState(()=>{ const t=new Date(); t.setHours(0,0,0,0); const d=new Date(t); d.setDate(t.getDate()-((t.getDay()+6)%7)); return Math.round((t-d)/86400000); });
   const [inbox,setInbox]=useState([]);
   const [amCols,setAmCols]=useState(()=>dateCols.map(()=>[]));
   const [pmCols,setPmCols]=useState(()=>dateCols.map(()=>[]));
@@ -1340,6 +1341,12 @@ function App() {
     const pastAccents=["#aaa","#999","#888","#888","#999","#aaa","#bbb"];
     const colAccents=isReadOnly?pastAccents:wkAccents;
     const isToday=date=>date.toDateString()===TODAY.toDateString();
+    const isPast=date=>date<TODAY&&!isToday(date);
+    const AM_C="#EAF3DE"; const AM_T="#27500A"; const AM_B="#97C459";
+    const PM_C="#FAEEDA"; const PM_T="#633806"; const PM_B="#EF9F27";
+    const RT_C="#EEEDFE"; const RT_T="#3C3489";
+
+    // ── 過去週（読み取り専用） ──
     if (isReadOnly) {
       if (layout==="stack") {
         return (
@@ -1373,47 +1380,149 @@ function App() {
         </div>
       );
     }
+
+    // ── スマホ: ドットカレンダー + ドリルダウン ──
     if (layout==="stack") {
       return (
         <div style={{overflowY:"auto",WebkitOverflowScrolling:"touch",flex:1,padding:"0 10px 32px",boxSizing:"border-box"}}>
-            {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>}
-            {boardWeek!==0 && <div style={{padding:"4px 0 6px",fontSize:11,color:"#aaa"}}>{isReadOnly?"👁 閲覧のみ — 過去の記録":""}</div>}
-            {cols.map((date,i)=>(
-              <div key={i} style={{marginBottom:14}}>
-                <DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/>
-              </div>
-            ))}
+          {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>}
+          {boardWeek!==0 && <div style={{padding:"4px 0 8px",fontSize:11,color:"#aaa"}}>{isReadOnly?"👁 閲覧のみ — 過去の記録":""}</div>}
+          {/* ドットカレンダー */}
+          <div style={{...FONT_STYLE,background:"#fff",borderRadius:14,border:"1.5px solid #e8e8e8",padding:"12px 10px",marginBottom:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:8}}>
+              {cols.map((date,i)=>{
+                const amN=am[i]?.filter(t=>!doneIds.has(t.id)).length||0;
+                const pmN=pm[i]?.filter(t=>!doneIds.has(t.id)).length||0;
+                const sel=selectedStackDay===i;
+                return (
+                  <div key={i} onClick={()=>setSelectedStackDay(sel?-1:i)} style={{borderRadius:10,padding:"7px 3px",textAlign:"center",cursor:"pointer",
+                    border:sel?`2px solid ${PINK}`:isToday(date)?`1.5px solid #378ADD`:"1px solid #e8e8e8",
+                    background:sel?"#FBEAF0":isToday(date)?"#E6F1FB":isPast(date)?"#fafafa":"#fff",
+                    opacity:isPast(date)&&!sel?0.5:1}}>
+                    <div style={{...FONT_STYLE,fontSize:11,fontWeight:500,color:isToday(date)?"#185FA5":sel?PINK:"#666"}}>{DAYS_JP[date.getDay()]}</div>
+                    <div style={{...FONT_STYLE,fontSize:12,color:isToday(date)?"#378ADD":sel?PINK:"#aaa",margin:"2px 0"}}>{date.getDate()}</div>
+                    <div style={{display:"flex",justifyContent:"center",gap:2,marginTop:3,minHeight:6}}>
+                      {Array.from({length:Math.min(amN,3)}).map((_,k)=><div key={k} style={{width:5,height:5,borderRadius:"50%",background:AM_B}}/>)}
+                      {Array.from({length:Math.min(pmN,3)}).map((_,k)=><div key={k} style={{width:5,height:5,borderRadius:"50%",background:PM_B}}/>)}
+                      {amN===0&&pmN===0&&<div style={{width:5,height:5,borderRadius:"50%",background:"#e8e8e8"}}/>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{display:"flex",gap:10,borderTop:"0.5px solid #f0f0f0",paddingTop:8}}>
+              {[["AM",AM_B],["PM",PM_B]].map(([l,col])=>(
+                <div key={l} style={{display:"flex",alignItems:"center",gap:4}}>
+                  <div style={{width:7,height:7,borderRadius:"50%",background:col}}/>
+                  <span style={{...FONT_STYLE,fontSize:10,color:"#aaa"}}>{l}</span>
+                </div>
+              ))}
+            </div>
           </div>
+          {/* ドリルダウン詳細 */}
+          {selectedStackDay>=0 && (()=>{
+            const date=cols[selectedStackDay];
+            const amTodos=am[selectedStackDay]||[];
+            const pmTodos=pm[selectedStackDay]||[];
+            return (
+              <div style={{...FONT_STYLE,background:"#fff",borderRadius:14,border:`1.5px solid ${isToday(date)?`${PINK}88`:"#e8e8e8"}`,padding:"14px",marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                  <span style={{...FONT_STYLE,fontSize:13,fontWeight:700,color:isToday(date)?PINK:"#333"}}>{DAYS_JP[date.getDay()]} {fmtDate(date)}</span>
+                  {isToday(date)&&<span style={{...FONT_STYLE,fontSize:11,background:"#FBEAF0",color:PINK,padding:"1px 8px",borderRadius:99}}>今日</span>}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  {[[amTodos,"🌱","AM",AM_C,AM_T,AM_B],[pmTodos,"☀️","PM",PM_C,PM_T,PM_B]].map(([todos,emoji,slot,bg,tc,bc])=>(
+                    <div key={slot} style={{background:bg,borderRadius:10,padding:"10px",border:`1px solid ${bc}`}}>
+                      <div style={{...FONT_STYLE,fontSize:11,fontWeight:700,color:tc,marginBottom:8}}>{emoji} {slot}</div>
+                      {todos.length===0&&<div style={{...FONT_STYLE,fontSize:11,color:tc,opacity:0.4,fontStyle:"italic"}}>なし</div>}
+                      {todos.map((t,ti)=>(
+                        <div key={t.id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 0",borderBottom:`0.5px solid ${bc}55`,opacity:doneIds.has(t.id)?0.4:1}}>
+                          <div onClick={()=>sp.onToggle(t.id)} style={{width:14,height:14,borderRadius:3,border:`2px solid ${doneIds.has(t.id)?tc:"#ccc"}`,background:doneIds.has(t.id)?tc:"transparent",flexShrink:0,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                            {doneIds.has(t.id)&&<span style={{color:"#fff",fontSize:9}}>✓</span>}
+                          </div>
+                          {t.routine&&<span style={{...FONT_STYLE,fontSize:9,color:RT_T,background:RT_C,padding:"1px 4px",borderRadius:3}}>↻</span>}
+                          <span style={{...FONT_STYLE,fontSize:12,color:doneIds.has(t.id)?"#bbb":"#333",flex:1,textDecoration:doneIds.has(t.id)?"line-through":"none"}}>{t.text}</span>
+                          <div onClick={()=>sp.onEdit(t,`d${selectedStackDay}-${slot.toLowerCase()}`)} style={{fontSize:13,cursor:"pointer",opacity:0.4,flexShrink:0}}>✏️</div>
+                        </div>
+                      ))}
+                      {!isPast(date)&&<div onClick={()=>sp.onAdd(`d${selectedStackDay}-${slot.toLowerCase()}`)} style={{...FONT_STYLE,fontSize:11,color:tc,opacity:0.5,marginTop:6,cursor:"pointer"}}>＋ 追加</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
       );
     }
+
+    // ── PC: グリッドヒートマップ ──
     return (
-      <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         {boardWeek===0 && (
-          <div style={{width:220,flexShrink:0,display:"flex",flexDirection:"column",gap:10,padding:"0 0 20px 0",borderRight:"1px solid #e8e8e8",overflowY:"auto"}}>
+          <div style={{flexShrink:0,paddingBottom:10}}>
             <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>
           </div>
         )}
-        <div style={{flex:1,overflowX:"auto",overflowY:"auto",padding:"0 0 24px 14px",WebkitOverflowScrolling:"touch"}}>
-          {boardWeek===0 && getTodayColIndex(cols)>=0 && (
-            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
-              <button onClick={()=>{ const el=document.getElementById(`day-col-${boardWeek}-today`); el?.scrollIntoView({behavior:"smooth",inline:"start",block:"nearest"}); }} style={{...FONT_STYLE,fontSize:11,fontWeight:700,color:PINK,background:PINK_LIGHT,border:`1px solid ${PINK}44`,borderRadius:99,padding:"4px 12px",cursor:"pointer"}}>📍 今日に戻る</button>
-            </div>
-          )}
-          <div style={{display:"flex",gap:14,alignItems:"flex-start",paddingBottom:16}}>
-            {(boardWeek===0?[...cols.filter(d=>d<TODAY&&!isToday(d)),...cols.filter(d=>d>=TODAY||isToday(d))]:cols).map((date)=>{
-              const i=cols.indexOf(date);
-              const past=boardWeek===0&&date<TODAY&&!isToday(date);
-              return (
-                <div key={i} id={isToday(date)?`day-col-${boardWeek}-today`:`day-col-${boardWeek}-${i}`} style={{minWidth:260,maxWidth:300,width:280,flexShrink:0,opacity:past?0.7:1}}>
-                  <DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/>
+        <div style={{flex:1,overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+          <div style={{...FONT_STYLE,background:"#fff",borderRadius:12,border:"1px solid #e8e8e8",overflow:"hidden"}}>
+            {/* ヘッダー行 */}
+            <div style={{display:"grid",gridTemplateColumns:"52px repeat(7,1fr)",borderBottom:"1px solid #e8e8e8"}}>
+              <div style={{background:"#fafafa"}}/>
+              {cols.map((date,i)=>(
+                <div key={i} style={{padding:"10px 8px",textAlign:"center",
+                  background:isToday(date)?"#E6F1FB":isPast(date)?"#fafafa":"#fff",
+                  borderLeft:"1px solid #f0f0f0"}}>
+                  <div style={{...FONT_STYLE,fontSize:12,fontWeight:700,color:isToday(date)?"#185FA5":isPast(date)?"#bbb":"#555"}}>{DAYS_JP[date.getDay()]}</div>
+                  <div style={{...FONT_STYLE,fontSize:11,color:isToday(date)?"#378ADD":isPast(date)?"#ccc":"#aaa",marginTop:2}}>{fmtDate(date)}</div>
+                  {isToday(date)&&<div style={{width:6,height:6,borderRadius:"50%",background:"#378ADD",margin:"3px auto 0"}}/>}
                 </div>
-              );
-            })}
+              ))}
+            </div>
+            {/* AM・PMスロット行 */}
+            {[["am","🌱","AM",AM_C,AM_T,AM_B],["pm","☀️","PM",PM_C,PM_T,PM_B]].map(([slot,emoji,slotLabel,bg,tc,bc])=>(
+              <div key={slot} style={{display:"grid",gridTemplateColumns:"52px repeat(7,1fr)",borderBottom:"1px solid #f0f0f0"}}>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"8px 4px",background:"#fafafa",borderRight:"1px solid #f0f0f0",gap:2}}>
+                  <span style={{fontSize:16}}>{emoji}</span>
+                  <span style={{...FONT_STYLE,fontSize:10,fontWeight:700,color:tc}}>{slotLabel}</span>
+                </div>
+                {cols.map((date,ci)=>{
+                  const todos=(slot==="am"?am:pm)[ci]||[];
+                  return (
+                    <div key={ci} onClick={()=>!isPast(date)&&sp.onAdd(`d${ci}-${slot}`)}
+                      style={{padding:"8px 6px",minHeight:90,borderLeft:"1px solid #f0f0f0",cursor:isPast(date)?"default":"pointer",
+                        background:isToday(date)?`${bg}66`:isPast(date)?"#fafafa":"#fff",
+                        borderTop:isToday(date)?`2px solid ${bc}`:"none"}}>
+                      {todos.map((t,ti)=>(
+                        <div key={t.id} onClick={e=>{e.stopPropagation();sp.onEdit(t,`d${ci}-${slot}`);}}
+                          style={{...FONT_STYLE,fontSize:11,padding:"3px 6px",borderRadius:5,marginBottom:3,cursor:"pointer",
+                            background:t.routine?RT_C:bg,color:t.routine?RT_T:tc,
+                            border:`0.5px solid ${t.routine?"#AFA9EC":bc}`,
+                            textDecoration:doneIds.has(t.id)?"line-through":"none",
+                            opacity:doneIds.has(t.id)?0.45:1,
+                            whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                          {t.routine&&<span style={{fontSize:9,marginRight:3}}>↻</span>}{t.text}
+                        </div>
+                      ))}
+                      {todos.length===0&&!isPast(date)&&<div style={{...FONT_STYLE,fontSize:10,color:"#ddd",marginTop:4}}>＋</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          {/* 凡例 */}
+          <div style={{display:"flex",gap:12,marginTop:10,alignItems:"center"}}>
+            {[["AM",AM_C,AM_T],["PM",PM_C,PM_T],["ルーティン",RT_C,RT_T]].map(([l,bg,tc])=>(
+              <div key={l} style={{display:"flex",alignItems:"center",gap:4}}>
+                <div style={{width:10,height:10,borderRadius:2,background:bg,border:`0.5px solid ${tc}44`}}/>
+                <span style={{...FONT_STYLE,fontSize:11,color:"#888"}}>{l}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
     );
-    return null;
   })();
 
   return (
