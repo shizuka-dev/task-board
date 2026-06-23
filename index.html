@@ -2,9 +2,15 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Task Board v13-p3</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Task Board v13-p4</title>
 <!--
+  v13-p4 (スマホUI/UX改善) 変更履歴
+  [UI] 今日を中心にした日別折りたたみ表示
+  [UI] 固定ボトムナビと自然な週順序へ変更
+  [UI] クイック入力・タスクカード・保存表示を簡略化
+  [UI] タップ領域、配色、iPhone安全領域を改善
+
   v13-p3 (スマホ起動安定化) 変更履歴
   [FIX] ブラウザ上のBabel変換を廃止し、事前変換済みapp.jsへ分離
   [FIX] 外部ライブラリをdefer読み込みに変更し、初期画面を先に表示
@@ -52,7 +58,7 @@
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" onerror="showBootError('Supabaseの読み込みに失敗')"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js" onerror="showBootError('Reactの読み込みに失敗')"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js" onerror="showBootError('React DOMの読み込みに失敗')"></script>
-<script defer src="./app.js?v=13-p3" onerror="showBootError('アプリ本体の読み込みに失敗')"></script>
+<script defer src="./app.js?v=13-p4" onerror="showBootError('アプリ本体の読み込みに失敗')"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Noto Sans JP', 'Hiragino Sans', sans-serif; background: #f5f6f8; }

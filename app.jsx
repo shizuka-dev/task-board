@@ -406,7 +406,7 @@ function EditModal({ todo, onSave, onClose }) {
   const btn=(active)=>({...FONT_STYLE,padding:"7px 16px",borderRadius:6,fontSize:13,cursor:"pointer",fontWeight:700,background:active?"#0d0d0d":"#f5f5f5",border:`1.5px solid ${active?"#0d0d0d":"#ddd"}`,color:active?"#fff":"#555"});
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:2000}} onClick={onClose}>
-      <div style={{...FONT_STYLE,background:"#fff",borderRadius:"20px 20px 0 0",padding:"24px 20px 40px",width:"100%",maxWidth:520,boxShadow:"0 -4px 24px rgba(0,0,0,.12)"}} onClick={e=>e.stopPropagation()}>
+      <div style={{...FONT_STYLE,background:"#fff",borderRadius:"20px 20px 0 0",padding:"24px 20px",paddingBottom:"calc(28px + env(safe-area-inset-bottom))",width:"100%",maxWidth:520,maxHeight:"92dvh",overflowY:"auto",boxShadow:"0 -4px 24px rgba(0,0,0,.12)"}} onClick={e=>e.stopPropagation()}>
         <div style={{width:40,height:4,background:"#ddd",borderRadius:2,margin:"0 auto 20px"}}/>
         <div style={{fontSize:12,fontWeight:700,color:PINK,marginBottom:14}}>{todo?.id?"タスクを編集":"新しいタスク"}</div>
         <textarea value={text} onChange={e=>setText(e.target.value)} autoFocus placeholder="タスクの内容..."
@@ -455,11 +455,12 @@ function EditModal({ todo, onSave, onClose }) {
 
 function TodoCard({ todo, isDone, isAm, sortIdx, colId, onEdit, onDelete, onToggle, sortDrag }) {
   const cardRef=useRef(null);
+  const [showMenu,setShowMenu]=useState(false);
   const imp=!!todo.important;
   const IMP_RED="#E24B4A", IMP_RED_TEXT="#791F1F";
   const ac=isAm?AM_ACCENT:PM_ACCENT, cb=isAm?AM_LIGHT:PM_LIGHT, ct=isAm?AM_TEXT:PM_TEXT;
   const lbl=routineLabel(todo.routine);
-  const borderCol = isDone?"#eee" : imp?IMP_RED : isAm?"#f0d8b0":"#d4c8f0";
+  const borderCol = isDone?"#e8e8e8" : imp?IMP_RED : isAm?AM_BORDER:PM_BORDER;
   const borderW   = imp&&!isDone ? "3px" : "1.5px";
   return (
     <div ref={cardRef}
@@ -471,28 +472,30 @@ function TodoCard({ todo, isDone, isAm, sortIdx, colId, onEdit, onDelete, onTogg
       onTouchStart={e=>sortDrag.onTouchStart(e,colId,sortIdx,cardRef.current)}
       onTouchMove={sortDrag.onTouchMove}
       onTouchEnd={sortDrag.onTouchEnd}
-      style={{...FONT_STYLE,background:isDone?"#fafafa":"#fff",border:`${borderW} solid ${borderCol}`,borderRadius:10,padding:"10px 10px 10px 4px",marginBottom:7,userSelect:"none",WebkitUserSelect:"none",WebkitTouchCallout:"none",opacity:isDone?0.55:1,touchAction:"pan-y",transition:"border-color .15s"}}>
-      <div style={{display:"flex",alignItems:"flex-start",gap:6}}>
+      style={{...FONT_STYLE,position:"relative",background:isDone?"#fafafa":"#fff",border:`${borderW} solid ${borderCol}`,borderRadius:12,padding:"10px 8px 10px 4px",marginBottom:8,userSelect:"none",WebkitUserSelect:"none",WebkitTouchCallout:"none",opacity:isDone?0.58:1,touchAction:"pan-y",transition:"border-color .15s, box-shadow .15s",boxShadow:isDone?"none":"0 1px 2px rgba(0,0,0,.04)"}}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
         {/* ドラッグハンドル */}
         <div style={{display:"flex",flexDirection:"column",gap:3,padding:"3px 4px",cursor:"grab",flexShrink:0,marginTop:2}}>
           {[0,1,2].map(i=><div key={i} style={{display:"flex",gap:2}}>{[0,1].map(j=><div key={j} style={{width:3,height:3,borderRadius:"50%",background:imp&&!isDone?"#F09595":"#ccc"}}/>)}</div>)}
         </div>
         {/* チェック */}
-        <div onClick={()=>onToggle(todo.id)} style={{width:17,height:17,minWidth:17,borderRadius:4,marginTop:2,border:`2px solid ${isDone?ac:imp?"#F09595":"#ccc"}`,background:isDone?ac:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-          {isDone && <span style={{color:"#fff",fontSize:10,fontWeight:700,lineHeight:1}}>✓</span>}
-        </div>
+        <button aria-label={isDone?"未完了に戻す":"完了にする"} onClick={e=>{e.stopPropagation();onToggle(todo.id);}} style={{width:26,height:26,minWidth:26,borderRadius:7,marginTop:0,border:`2px solid ${isDone?ac:imp?"#F09595":"#bbb"}`,background:isDone?ac:"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:0}}>
+          {isDone && <span style={{color:"#fff",fontSize:14,fontWeight:700,lineHeight:1}}>✓</span>}
+        </button>
         {/* テキスト */}
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{...FONT_STYLE,fontSize:imp&&!isDone?14:13,fontWeight:imp&&!isDone?700:500,color:isDone?"#aaa":imp?IMP_RED_TEXT:"#111",textDecoration:isDone?"line-through":"none",lineHeight:1.5,wordBreak:"break-word"}}>{todo.text}</div>
+        <div onClick={()=>onEdit(todo)} style={{flex:1,minWidth:0,cursor:"pointer",padding:"2px 0 4px"}}>
+          <div style={{...FONT_STYLE,fontSize:imp&&!isDone?15:14,fontWeight:imp&&!isDone?700:500,color:isDone?"#aaa":imp?IMP_RED_TEXT:"#111",textDecoration:isDone?"line-through":"none",lineHeight:1.5,wordBreak:"break-word"}}>{todo.text}</div>
           <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:imp||lbl?4:0}}>
             {imp&&!isDone && <span style={{...FONT_STYLE,fontSize:10,fontWeight:700,color:IMP_RED_TEXT,background:"#F7C1C1",borderRadius:99,padding:"2px 8px"}}>‼️ 重要</span>}
             {lbl && <span style={{...FONT_STYLE,fontSize:10,fontWeight:700,color:ct,background:cb,borderRadius:4,padding:"2px 8px"}}>🔁 {lbl}</span>}
           </div>
         </div>
-        {/* アクションボタン（✏️と🗑のみ） */}
-        <div style={{display:"flex",gap:2,flexShrink:0}}>
-          <button onClick={e=>{e.stopPropagation();onEdit(todo)}} style={{background:"none",border:"none",color:imp&&!isDone?IMP_RED:"#bbb",cursor:"pointer",padding:"4px 6px",fontSize:14}}>✏️</button>
-          <button onClick={e=>{e.stopPropagation();onDelete(todo.id)}} style={{background:"none",border:"none",color:"#bbb",cursor:"pointer",padding:"4px 6px",fontSize:14}}>🗑</button>
+        <div style={{position:"relative",flexShrink:0}}>
+          <button aria-label="タスクメニュー" onClick={e=>{e.stopPropagation();setShowMenu(p=>!p);}} style={{width:36,height:36,background:"transparent",border:"none",borderRadius:8,color:"#888",cursor:"pointer",fontSize:20,lineHeight:1}}>⋯</button>
+          {showMenu && <div style={{position:"absolute",right:0,top:38,zIndex:20,width:138,background:"#fff",border:"1px solid #ddd",borderRadius:10,padding:5,boxShadow:"0 8px 24px rgba(0,0,0,.16)"}} onClick={e=>e.stopPropagation()}>
+            <button onClick={()=>{setShowMenu(false);onEdit(todo);}} style={{...FONT_STYLE,width:"100%",padding:"10px 12px",textAlign:"left",background:"none",border:"none",borderRadius:7,fontSize:13,color:"#444",cursor:"pointer"}}>✏️ 編集</button>
+            <button onClick={()=>{setShowMenu(false);onDelete(todo.id);}} style={{...FONT_STYLE,width:"100%",padding:"10px 12px",textAlign:"left",background:"#fff2f2",border:"none",borderRadius:7,fontSize:13,color:"#c33",cursor:"pointer"}}>🗑 削除</button>
+          </div>}
         </div>
       </div>
     </div>
@@ -525,29 +528,48 @@ function SlotColumn({ colId, isAm, todos, doneIds, onEdit, onDelete, onToggle, o
       <div style={{fontSize:11,fontWeight:700,color:isAm?AM_HEAD:PM_HEAD,marginBottom:8}}>{isAm?"🌱 AM":"☀️ PM"}</div>
       {sorted.length===0 && <div style={{...FONT_STYLE,fontSize:11,color:"#ccc",textAlign:"center",padding:"14px 0",fontStyle:"italic"}}>タスクなし</div>}
       {sorted.map((todo,i)=><TodoCard key={todo.id} todo={todo} sortIdx={i} colId={colId} isDone={doneIds.has(todo.id)} isAm={isAm} onEdit={t=>onEdit(t,colId)} onDelete={onDelete} onToggle={onToggle} sortDrag={sortDrag}/>)}
-      <button onClick={()=>onAdd(colId)} style={{...FONT_STYLE,marginTop:6,width:"100%",padding:"6px",background:"transparent",border:`1.5px dashed ${isAm?AM_BORDER:PM_BORDER}`,borderRadius:8,color:isAm?AM_TEXT:PM_TEXT,cursor:"pointer",fontSize:12,fontWeight:700}}>＋</button>
+      <button onClick={()=>onAdd(colId)} style={{...FONT_STYLE,marginTop:6,width:"100%",minHeight:42,padding:"8px",background:"transparent",border:`1.5px dashed ${isAm?AM_BORDER:PM_BORDER}`,borderRadius:9,color:isAm?AM_TEXT:PM_TEXT,cursor:"pointer",fontSize:12,fontWeight:700}}>＋ タスクを追加</button>
     </div>
   );
 }
 
-function DayColumn({ dayIndex, date, amTodos, pmTodos, accent, isToday, doneIds, onEdit, onDelete, onToggle, onAdd, sortDrag }) {
+function DayColumn({ dayIndex, date, amTodos, pmTodos, accent, isToday, hideHeader=false, doneIds, onEdit, onDelete, onToggle, onAdd, sortDrag }) {
   const amId=`d${dayIndex}-am`, pmId=`d${dayIndex}-pm`;
   const slotProps={doneIds,onEdit,onDelete,onToggle,onAdd,sortDrag};
   return (
-    <div style={{...FONT_STYLE,background:"#fff",border:`${isToday?"2px":"1.5px"} solid ${isToday?PINK:"#e2e2e2"}`,borderRadius:14,padding:"14px 12px",boxShadow:isToday?`0 0 0 3px ${PINK_LIGHT}`:"0 1px 4px rgba(0,0,0,.06)"}}>
-      <div style={{marginBottom:4}}>
+    <div style={{...FONT_STYLE,background:"#fff",border:hideHeader?"1px solid #e5e5e5":`${isToday?"2px":"1.5px"} solid ${isToday?PINK:"#e2e2e2"}`,borderRadius:14,padding:hideHeader?"10px":"14px 12px",boxShadow:hideHeader?"none":isToday?`0 0 0 3px ${PINK_LIGHT}`:"0 1px 4px rgba(0,0,0,.06)"}}>
+      {!hideHeader && <div style={{marginBottom:4}}>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           <div style={{width:3,height:16,background:accent,borderRadius:2}}/>
           <span style={{...FONT_STYLE,fontSize:13,fontWeight:isToday?700:400,color:isToday?PINK:"#111"}}>{getDayLabel(dayIndex,date)}</span>
         </div>
         <div style={{...FONT_STYLE,fontSize:15,fontWeight:700,color:isToday?PINK:"#111",marginTop:3,marginLeft:9}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</div>
-      </div>
-      <VolumeBar amCount={amTodos.length} pmCount={pmTodos.length}/>
+      </div>}
+      {!hideHeader && <VolumeBar amCount={amTodos.length} pmCount={pmTodos.length}/>} 
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         <SlotColumn colId={amId} isAm={true} todos={amTodos} {...slotProps}/>
         <SlotColumn colId={pmId} isAm={false} todos={pmTodos} {...slotProps}/>
       </div>
     </div>
+  );
+}
+
+function MobileDaySection({ defaultOpen=false, dayIndex, date, amTodos, pmTodos, isToday, accent, ...props }) {
+  const [open,setOpen]=useState(defaultOpen);
+  const total=amTodos.length+pmTodos.length;
+  const done=amTodos.concat(pmTodos).filter(t=>props.doneIds.has(t.id)).length;
+  return (
+    <section style={{marginBottom:10}}>
+      <button onClick={()=>setOpen(p=>!p)} style={{...FONT_STYLE,width:"100%",minHeight:58,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:isToday?PINK_LIGHT:"#fff",border:`${isToday?2:1.5}px solid ${isToday?PINK:"#e2e2e2"}`,borderRadius:open?"14px 14px 8px 8px":14,boxShadow:"0 1px 4px rgba(0,0,0,.05)",cursor:"pointer",textAlign:"left"}}>
+        <span style={{width:4,height:26,background:isToday?PINK:accent,borderRadius:3,flexShrink:0}}/>
+        <span style={{flex:1,minWidth:0}}>
+          <span style={{display:"block",fontSize:14,fontWeight:700,color:isToday?PINK:"#222"}}>{getDayLabel(dayIndex,date)} <span style={{fontWeight:500,color:"#888"}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</span></span>
+          <span style={{display:"block",fontSize:11,color:"#999",marginTop:2}}>🌱 {amTodos.length}件　☀️ {pmTodos.length}件{done>0?`　✓ ${done}/${total}`:""}</span>
+        </span>
+        <span style={{fontSize:18,color:"#999",transform:open?"rotate(90deg)":"none",transition:"transform .15s"}}>›</span>
+      </button>
+      {open && <div style={{marginTop:6}}><DayColumn dayIndex={dayIndex} date={date} amTodos={amTodos} pmTodos={pmTodos} accent={accent} isToday={isToday} hideHeader={true} {...props}/></div>}
+    </section>
   );
 }
 
@@ -591,6 +613,8 @@ const HINT_CHIPS = [
 
 function QuickEntry({ onAdd, dateCols }) {
   const [text,setText]=useState(""), [focused,setFocused]=useState(false);
+  const isMobile = window.innerWidth < 720;
+  const [expanded,setExpanded]=useState(()=>!isMobile);
   const textareaRef=useRef(null);
   const previews = useMemo(() => previewLines(text), [text]);
   const valid = useMemo(() => previews.filter(p=>p.parsed), [previews]);
@@ -609,7 +633,7 @@ function QuickEntry({ onAdd, dateCols }) {
     return { ic, dc: valid.length - ic };
   }, [valid, dateCols]);
 
-  const submit = () => { if (!valid.length) return; onAdd(valid.map(p=>({id:genId(),...p.parsed}))); setText(""); };
+  const submit = () => { if (!valid.length) return; onAdd(valid.map(p=>({id:genId(),...p.parsed}))); setText(""); if(isMobile)setExpanded(false); };
   const btnLabel = ic>0&&dc>0 ? `${dc}件を直接追加・${ic}件をストックへ` : dc>0 ? `${dc}件を直接ボードに追加` : `${ic}件をストックに追加`;
 
   const insertChip = (insert) => {
@@ -621,14 +645,20 @@ function QuickEntry({ onAdd, dateCols }) {
     requestAnimationFrame(()=>{ ta.focus(); ta.setSelectionRange(s+insert.length,s+insert.length); });
   };
 
-  const isMobile = window.innerWidth < 720;
   const chipStyle = (color,bg) => ({...FONT_STYLE,display:"inline-flex",alignItems:"center",padding:isMobile?"4px 8px":"4px 9px",borderRadius:99,fontSize:isMobile?10:11,fontWeight:700,cursor:"pointer",border:"1px solid",background:bg,color,borderColor:color+"55",whiteSpace:"nowrap",userSelect:"none"});
+
+  if(isMobile&&!expanded) return (
+    <button onClick={()=>setExpanded(true)} style={{...FONT_STYLE,width:"100%",minHeight:52,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"12px 16px",marginBottom:12,background:"#0d0d0d",color:"#fff",border:"none",borderRadius:13,fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 3px 10px rgba(0,0,0,.12)"}}>
+      <span style={{fontSize:20,lineHeight:1}}>＋</span> タスクを追加
+    </button>
+  );
 
   return (
     <div style={{...FONT_STYLE,background:"#fff",border:`1.5px solid ${focused?PINK:"#d8d8d8"}`,borderRadius:12,padding:window.innerWidth<720?"10px 12px":"14px 16px",marginBottom:12,boxShadow:focused?`0 0 0 3px ${PINK_LIGHT}`:"0 1px 3px rgba(0,0,0,.06)",boxSizing:"border-box",width:"100%",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
-        <span style={{fontSize:12,fontWeight:700,color:PINK}}>⚡ クイック入力</span>
-        <span style={{fontSize:10,color:"#bbb",marginLeft:"auto"}}>⌘Enter</span>
+        <span style={{fontSize:12,fontWeight:700,color:PINK}}>＋ タスクを追加</span>
+        {!isMobile && <span style={{fontSize:10,color:"#bbb",marginLeft:"auto"}}>⌘Enter</span>}
+        {isMobile && <button onClick={()=>{setExpanded(false);setText("");}} aria-label="入力を閉じる" style={{marginLeft:"auto",width:32,height:32,border:"none",borderRadius:8,background:"#f3f3f3",color:"#888",fontSize:18,cursor:"pointer"}}>×</button>}
       </div>
 
       {/* テキストエリア */}
@@ -638,7 +668,7 @@ function QuickEntry({ onAdd, dateCols }) {
         style={{...FONT_STYLE,width:"100%",background:"#f7f7f7",border:"1.5px solid #e8e8e8",borderRadius:6,padding:"9px 11px",fontSize:13,color:"#333",lineHeight:1.6,resize:"none",outline:"none",boxSizing:"border-box"}}/>
 
       {/* ① ヒントチップ：横スクロール1行 */}
-      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
+      <div style={{display:"flex",flexWrap:isMobile?"nowrap":"wrap",overflowX:isMobile?"auto":"visible",WebkitOverflowScrolling:"touch",gap:6,marginTop:8,paddingBottom:isMobile?3:0}}>
         {HINT_CHIPS.map(ch=>(
           <span key={ch.label} onClick={()=>insertChip(ch.insert)} style={{...chipStyle(ch.color,ch.bg)}}>{ch.label}</span>
         ))}
@@ -740,7 +770,7 @@ function RoutineManager({ routines, onAdd, onUpdate, onDelete, onToggle }) {
       })}
       {editDef!==null && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:2000}} onClick={()=>setEditDef(null)}>
-          <div style={{...FONT_STYLE,background:"#fff",borderRadius:"20px 20px 0 0",padding:"24px 20px 40px",width:"100%",maxWidth:520,boxShadow:"0 -4px 24px rgba(0,0,0,.12)",maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+          <div style={{...FONT_STYLE,background:"#fff",borderRadius:"20px 20px 0 0",padding:"24px 20px",paddingBottom:"calc(28px + env(safe-area-inset-bottom))",width:"100%",maxWidth:520,boxShadow:"0 -4px 24px rgba(0,0,0,.12)",maxHeight:"92dvh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
             <div style={{width:40,height:4,background:"#ddd",borderRadius:2,margin:"0 auto 20px"}}/>
             <div style={{fontSize:13,fontWeight:700,color:PINK,marginBottom:14}}>{editDef?.id?"ルーティンを編集":"新しいルーティン"}</div>
             <div style={{fontSize:11,fontWeight:700,color:"#aaa",marginBottom:6}}>タスク名</div>
@@ -1119,6 +1149,7 @@ function App() {
   const sortDrag = useSortDrag({ onReorder: handleReorder });
   const [saveFlash,setSaveFlash]=useState(false);
   const [saveError,setSaveError]=useState(false);
+  const [savePending,setSavePending]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
   const importRef=useRef(null);
   const [layout,setLayout]=useState(()=>window.innerWidth<720?"stack":"board");
@@ -1165,13 +1196,14 @@ function App() {
   },[loaded,authed,layout,boardWeek]);
   useEffect(()=>{
     if (!loaded||!authed) return;
+    setSavePending(true);
     saveState({
       inbox,amCols,pmCols,doneIds,routines,trash,passwordHash:savedHash,
       amByDate,pmByDate,
       extraWeeks:[{cols:nextWeek1Cols,am:amNext1,pm:pmNext1},{cols:nextWeek2Cols,am:amNext2,pm:pmNext2}]
     }, dateCols,
-      ()=>{ setSaveError(true); setSaveFlash(false); },
-      ()=>{ setSaveError(false); setSaveFlash(true); setTimeout(()=>setSaveFlash(false),2200); }
+      ()=>{ setSavePending(false); setSaveError(true); setSaveFlash(false); },
+      ()=>{ setSavePending(false); setSaveError(false); setSaveFlash(true); setTimeout(()=>setSaveFlash(false),2200); }
     );
   },[inbox,amCols,pmCols,amNext1,pmNext1,amNext2,pmNext2,amByDate,pmByDate,doneIds,routines,trash,loaded,authed]);
 
@@ -1400,7 +1432,7 @@ function App() {
     if (isReadOnly) {
       if (layout==="stack") {
         return (
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{display:"flex",flexDirection:"column",gap:12,overflowY:"auto",WebkitOverflowScrolling:"touch",flex:1,padding:"0 12px calc(96px + env(safe-area-inset-bottom))"}}>
             {cols.map((date,i)=>(
               <div key={i} style={{...FONT_STYLE,background:"#fff",border:"1.5px solid #e8e8e8",borderRadius:14,padding:"12px",opacity:0.88}}>
                 <div style={{fontSize:14,fontWeight:700,color:"#888",marginBottom:8}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</div>
@@ -1432,12 +1464,12 @@ function App() {
     }
     if (layout==="stack") {
       return (
-        <div style={{overflowY:"auto",WebkitOverflowScrolling:"touch",flex:1,padding:"0 10px 32px",boxSizing:"border-box"}}>
-            {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>}
+        <div style={{overflowY:"auto",WebkitOverflowScrolling:"touch",flex:1,padding:"0 10px calc(96px + env(safe-area-inset-bottom))",boxSizing:"border-box"}}>
+            {boardWeek===0 && <QuickEntry onAdd={handleQuickAdd} dateCols={cols}/>} 
             {boardWeek!==0 && <div style={{padding:"4px 0 6px",fontSize:11,color:"#aaa"}}>{isReadOnly?"👁 閲覧のみ — 過去の記録":""}</div>}
             {cols.map((date,i)=>(
-              <div key={i} id={boardWeek===0&&isToday(date)?"day-col-0-today-stack":undefined} style={{marginBottom:14}}>
-                <DayColumn dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/>
+              <div key={`${boardWeek}-${i}`} id={boardWeek===0&&isToday(date)?"day-col-0-today-stack":undefined}>
+                <MobileDaySection defaultOpen={boardWeek===0?isToday(date):i===0} dayIndex={i} date={date} accent={isToday(date)?PINK:colAccents[i]} amTodos={am[i]} pmTodos={pm[i]} {...sp} onEdit={(t,c)=>handleEdit(t,c)} isToday={isToday(date)}/>
               </div>
             ))}
           </div>
@@ -1474,10 +1506,10 @@ function App() {
 
   return (
     <div style={{...FONT_STYLE,height:layout==="stack"?"100dvh":"auto",minHeight:layout==="stack"?"unset":"100vh",background:"#f5f6f8",display:layout==="stack"?"flex":"block",flexDirection:"column",overflow:"hidden",boxSizing:"border-box"}}>
-      <div style={{marginBottom:layout==="stack"?10:16,padding:layout==="stack"?"10px 10px 0":"0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,flexWrap:layout==="stack"?"wrap":"nowrap",gap:6}}>
-        <div style={{display:"flex",alignItems:"baseline",gap:20}}>
-          <h1 style={{...FONT_STYLE,margin:0,fontSize:20,fontWeight:700,color:"#0d0d0d"}}>Task Board</h1>
-          <div style={{...FONT_STYLE,fontSize:13,color:"#0d0d0d"}}>{new Date().getFullYear()}年{new Date().getMonth()+1}月{new Date().getDate()}日 ({DAYS_JP[new Date().getDay()]})</div>
+      <div style={{marginBottom:layout==="stack"?8:16,padding:layout==="stack"?"calc(8px + env(safe-area-inset-top)) 12px 4px":"0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,gap:6}}>
+        <div style={{display:"flex",alignItems:layout==="stack"?"flex-start":"baseline",flexDirection:layout==="stack"?"column":"row",gap:layout==="stack"?1:20}}>
+          <h1 style={{...FONT_STYLE,margin:0,fontSize:layout==="stack"?11:20,fontWeight:700,color:layout==="stack"?"#999":"#0d0d0d",letterSpacing:layout==="stack"?".08em":"normal"}}>TASK BOARD</h1>
+          <div style={{...FONT_STYLE,fontSize:layout==="stack"?17:13,fontWeight:layout==="stack"?700:400,color:"#0d0d0d"}}>{layout==="stack"?`${new Date().getMonth()+1}月${new Date().getDate()}日（${DAYS_JP[new Date().getDay()]}）`:`${new Date().getFullYear()}年${new Date().getMonth()+1}月${new Date().getDate()}日 (${DAYS_JP[new Date().getDay()]})`}</div>
           {urlUser!=="main" && <div style={{...FONT_STYLE,fontSize:11,fontWeight:700,color:"#fff",background:PINK,borderRadius:20,padding:"2px 10px"}}>{urlUser}</div>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -1491,15 +1523,15 @@ function App() {
             </button>
           ))}
           {layout!=="stack" && <div style={{width:1,height:20,background:"#e0e0e0",margin:"0 2px"}}/>}
-          <div style={{...FONT_STYLE,fontSize:12,color:saveError?"#cc3333":saveFlash?"#1b7a3a":"#ccc",transition:"color .4s"}}>{saveError?"⚠️":saveFlash?"✓":""}</div>
-          <button onClick={()=>setShowSettings(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:20,color:"#aaa",padding:"4px",lineHeight:1}} title="バックアップ・設定">⚙️</button>
+          <div style={{...FONT_STYLE,fontSize:layout==="stack"?10:12,color:saveError?"#cc3333":savePending?"#999":saveFlash?"#1b7a3a":"#bbb",transition:"color .25s",whiteSpace:"nowrap"}}>{saveError?"⚠ 保存失敗":savePending?"保存中…":saveFlash?"✓ 保存済み":""}</div>
+          <button onClick={()=>setShowSettings(true)} style={{width:44,height:44,background:"#fff",border:"1px solid #e4e4e4",borderRadius:12,cursor:"pointer",fontSize:20,color:"#777",padding:0,lineHeight:1}} title="バックアップ・設定">⚙️</button>
         </div>
       </div>
 
       {/* 設定モーダル */}
       {showSettings && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:3000}} onClick={()=>setShowSettings(false)}>
-          <div style={{...FONT_STYLE,background:"#fff",borderRadius:"20px 20px 0 0",padding:"24px 20px 40px",width:"100%",maxWidth:480,boxShadow:"0 -4px 24px rgba(0,0,0,.12)"}} onClick={e=>e.stopPropagation()}>
+          <div style={{...FONT_STYLE,background:"#fff",borderRadius:"20px 20px 0 0",padding:"24px 20px",paddingBottom:"calc(28px + env(safe-area-inset-bottom))",width:"100%",maxWidth:480,boxShadow:"0 -4px 24px rgba(0,0,0,.12)"}} onClick={e=>e.stopPropagation()}>
             <div style={{width:40,height:4,background:"#ddd",borderRadius:2,margin:"0 auto 20px"}}/>
             <div style={{fontSize:15,fontWeight:700,color:"#0d0d0d",marginBottom:6}}>⚙️ バックアップ・設定</div>
             <div style={{fontSize:12,color:"#aaa",marginBottom:20}}>データをJSONファイルで保存・復元できます</div>
@@ -1528,25 +1560,13 @@ function App() {
         </div>
       )}
 
-      {/* ── メインタブ：スマホのみ表示（PC はヘッダー右に統合済み） ── */}
-      {layout==="stack" && (
-        <div style={{display:"flex",gap:6,marginBottom:tab==="board"?6:16,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none",flexShrink:0,padding:"0 12px"}}>
-          {[["board","📋"],["inbox","📥"],["routines","🔁"],["trash","🗑"],["guide","📖"]].map(([key,icon])=>(
-            <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"7px 13px",borderRadius:8,fontSize:16,cursor:"pointer",border:"1.5px solid",flexShrink:0,position:"relative",background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0"}}>
-              {icon}
-              {key==="routines"&&routines.filter(r=>r.active).length>0 && badge(routines.filter(r=>r.active).length,"#555")}
-              {key==="trash"&&trash.length>0 && badge(trash.length,"#aaa")}
-            </button>
-          ))}
-        </div>
-      )}
-      {/* ── 週タブ：今週左端、右→先週→先々週、左→来週→再来週 ── */}
+      {/* ── 週タブ：過去→現在→未来 ── */}
       {tab==="board" && (
         <div style={{display:"flex",gap:6,marginBottom:layout==="stack"?12:8,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none",flexShrink:0,padding:layout==="stack"?"0 12px":"0"}}>
-          {[[0,"今週",false],[1,"来週",false],[2,"再来週",false],[-1,"先週",true],[-2,"先々週",true]].map(([w,label,readOnly])=>{
+          {[[-2,"先々週",true],[-1,"先週",true],[0,"今週",false],[1,"来週",false],[2,"再来週",false]].map(([w,label,readOnly])=>{
             const isActive=boardWeek===w;
             return (
-              <button key={w} onClick={()=>setBoardWeek(w)} style={{...FONT_STYLE,padding:"5px 14px",borderRadius:20,fontSize:12,fontWeight:700,cursor:"pointer",border:"1.5px solid",flexShrink:0,
+              <button key={w} onClick={()=>setBoardWeek(w)} style={{...FONT_STYLE,padding:layout==="stack"?"7px 10px":"5px 14px",borderRadius:20,fontSize:12,fontWeight:700,cursor:"pointer",border:"1.5px solid",flexShrink:0,
                 background:isActive?(readOnly?"#888":PINK):"#fff",
                 color:isActive?"#fff":(readOnly?"#aaa":"#555"),
                 borderColor:isActive?(readOnly?"#888":PINK):(readOnly?"#e8e8e8":"#e0e0e0")}}>
@@ -1557,12 +1577,21 @@ function App() {
           {(boardWeek===-1||boardWeek===-2) && <span style={{...FONT_STYLE,fontSize:11,color:"#aaa",alignSelf:"center"}}>👁 閲覧のみ</span>}
         </div>
       )}
-      {tab==="guide" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><QuickGuide/></div>
-      :tab==="trash" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><TrashBin trash={trash} onRestore={handleRestore} onPermanentDelete={id=>setTrash(p=>p.filter(t=>t.id!==id))} onClearAll={()=>setTrash([])}/></div>
-      :tab==="routines" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><RoutineManager routines={routines} onAdd={handleAddRoutine} onUpdate={handleUpdateRoutine} onDelete={handleDeleteRoutine} onToggle={handleToggleRoutine}/></div>
-      :tab==="inbox" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><InboxPage todos={inbox} {...sp} onAdd={()=>handleAdd("inbox")} onQuickAdd={handleQuickAdd} dateCols={dateCols}/></div>
+      {tab==="guide" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px calc(96px + env(safe-area-inset-bottom))":"0"}}><QuickGuide/></div>
+      :tab==="trash" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px calc(96px + env(safe-area-inset-bottom))":"0"}}><TrashBin trash={trash} onRestore={handleRestore} onPermanentDelete={id=>setTrash(p=>p.filter(t=>t.id!==id))} onClearAll={()=>setTrash([])}/></div>
+      :tab==="routines" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px calc(96px + env(safe-area-inset-bottom))":"0"}}><RoutineManager routines={routines} onAdd={handleAddRoutine} onUpdate={handleUpdateRoutine} onDelete={handleDeleteRoutine} onToggle={handleToggleRoutine}/></div>
+      :tab==="inbox" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px calc(96px + env(safe-area-inset-bottom))":"0"}}><InboxPage todos={inbox} {...sp} onAdd={()=>handleAdd("inbox")} onQuickAdd={handleQuickAdd} dateCols={dateCols}/></div>
 
       :boardContent}
+      {layout==="stack" && <nav aria-label="メインナビゲーション" style={{position:"fixed",left:0,right:0,bottom:0,zIndex:1500,display:"grid",gridTemplateColumns:"repeat(5,1fr)",background:"rgba(255,255,255,.96)",borderTop:"1px solid #ddd",boxShadow:"0 -4px 18px rgba(0,0,0,.08)",padding:"6px 6px calc(6px + env(safe-area-inset-bottom))",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
+        {[["board","📋","ボード"],["inbox","📥","ストック"],["routines","🔁","ルーティン"],["trash","🗑","ゴミ箱"],["guide","📖","使い方"]].map(([key,icon,label])=>(
+          <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,position:"relative",minHeight:52,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,background:"transparent",border:"none",borderRadius:10,color:tab===key?PINK:"#777",fontSize:10,fontWeight:tab===key?700:500,cursor:"pointer"}}>
+            <span style={{fontSize:20,lineHeight:1}}>{icon}</span><span>{label}</span>
+            {key==="inbox"&&inbox.length>0 && badge(inbox.length,PINK)}
+            {key==="trash"&&trash.length>0 && badge(trash.length,"#888")}
+          </button>
+        ))}
+      </nav>}
       {layout!=="stack" && <div style={{...FONT_STYLE,marginTop:14,fontSize:11,color:"#bbb"}}>💡 ✏️ 編集から重要マーク設定、ドラッグハンドルで並び替えができます</div>}
       {showModal&&editTodo && <EditModal todo={editTodo.todo} onSave={handleSave} onClose={()=>{setShowModal(false);setEditTodo(null);}}/>}
     </div>
