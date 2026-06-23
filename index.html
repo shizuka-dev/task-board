@@ -3,8 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Task Board v13-p1</title>
+<title>Task Board v13-p2</title>
 <!--
+  v13-p2 (フェーズ2: データ整合性) 変更履歴
+  [FIX] 来週・再来週の追加・編集・削除・並び替えが今週を誤更新する問題を修正
+  [FIX] Supabase保存エラーの検知と保存処理の直列化
+  [FIX] ルーティン編集時に既存IDと完了状態を維持
+  [FIX] v2バックアップを別週に復元した際の日付ずれを修正
+  [FIX] N週・N日ルーティンの重複判定に間隔と開始日を追加
+  [DEL] APIキーが必要なAI週次レビュー機能を削除
+
   v13-p1 (フェーズ1: 信頼回復) 変更履歴
   [FIX] 並び替え: 重要タスク先頭ソート時に表示順と内部順がずれ、別のカードが動くバグを修正
   [FIX] ストックページ: TodoCardにisDone/sortIdx未指定で完了表示・並び替えが効かないバグを修正
@@ -39,7 +47,6 @@ const _sb = window.supabase.createClient(
 const rawUser = new URLSearchParams(window.location.search).get("user") || "main";
 const urlUser = rawUser.replace(/[^a-zA-Z0-9_]/g, "").slice(0, 32) || "main";
 const DB_ROW_ID = `user_${urlUser}`;
-const OVERDUE_DAYS = 7;
 const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
 
 async function hashPassword(pw) {
@@ -84,28 +91,35 @@ async function loadState(dateCols) {
 }
 
 let _saveTimer = null;
-function saveState(state, dateCols, onError) {
+let _saveChain = Promise.resolve();
+let _saveVersion = 0;
+function saveState(state, dateCols, onError, onSuccess) {
+  const version = ++_saveVersion;
   clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(async () => {
-    try {
-      const amByDate = { ...(state.amByDate ?? {}) };
-      const pmByDate = { ...(state.pmByDate ?? {}) };
-      dateCols.forEach((d,i) => { amByDate[d.toDateString()] = state.amCols[i]; pmByDate[d.toDateString()] = state.pmCols[i]; });
-      if (state.extraWeeks) {
-        state.extraWeeks.forEach(({cols,am,pm}) => {
-          cols.forEach((d,i) => { amByDate[d.toDateString()] = am[i]; pmByDate[d.toDateString()] = pm[i]; });
+  _saveTimer = setTimeout(() => {
+    _saveChain = _saveChain.then(async () => {
+      try {
+        const amByDate = { ...(state.amByDate ?? {}) };
+        const pmByDate = { ...(state.pmByDate ?? {}) };
+        dateCols.forEach((d,i) => { amByDate[d.toDateString()] = state.amCols[i]; pmByDate[d.toDateString()] = state.pmCols[i]; });
+        if (state.extraWeeks) {
+          state.extraWeeks.forEach(({cols,am,pm}) => {
+            cols.forEach((d,i) => { amByDate[d.toDateString()] = am[i]; pmByDate[d.toDateString()] = pm[i]; });
+          });
+        }
+        const { error } = await _sb.from("todos").upsert({
+          id: DB_ROW_ID,
+          password_hash: state.passwordHash ?? null,
+          data: { inbox: state.inbox, amByDate, pmByDate, doneIds: [...state.doneIds], routines: state.routines, trash: state.trash, savedAt: Date.now() },
+          updated_at: new Date().toISOString(),
         });
+        if (error) throw error;
+        if (version===_saveVersion) onSuccess?.();
+      } catch(e) {
+        console.error("save error", e);
+        if (version===_saveVersion) onError?.();
       }
-      await _sb.from("todos").upsert({
-        id: DB_ROW_ID,
-        password_hash: state.passwordHash ?? null,
-        data: { inbox: state.inbox, amByDate, pmByDate, doneIds: [...state.doneIds], routines: state.routines, trash: state.trash, savedAt: Date.now() },
-        updated_at: new Date().toISOString(),
-      });
-    } catch(e) {
-      console.error("save error", e);
-      onError?.();
-    }
+    });
   }, 800);
 }
 
@@ -140,15 +154,7 @@ function getDayLabel(i, date) {
   return fmtDate(date);
 }
 function genId() { return typeof crypto.randomUUID === "function" ? crypto.randomUUID() : ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16)); }
-function stampTodo(t) { return { createdAt: Date.now(), lastCheckedAt: null, genre: null, ...t }; }
-function isOverdue(todo, doneIds) {
-  if (doneIds.has(todo.id)) return false;
-  if (todo.routineDefId) return false; // ルーティンタスクは積み残し対象外
-  if (todo.routine) return false;      // クイック入力ルーティンも除外
-  const ref = todo.lastCheckedAt ?? todo.createdAt;
-  if (!ref) return true; // 日付不明は積み残し扱い
-  return (Date.now() - ref) > OVERDUE_DAYS * 86400000;
-}
+function stampTodo(t) { return { createdAt: Date.now(), lastCheckedAt: null, ...t }; }
 function routineLabel(r) {
   if (!r) return null;
   if (r.type==="daily") return "毎日";
@@ -271,6 +277,36 @@ function autoGenerateFromDefinitions(amCols, pmCols, routines, dateCols) {
     });
   });
   return { amCols:newAm, pmCols:newPm };
+}
+
+// 1件のルーティン定義だけを差分反映し、同じ列にある既存タスクのIDを維持する
+function syncRoutineDefinition(amCols, pmCols, def, dateCols) {
+  const existingByCol = new Map(), oldIds = new Set();
+  amCols.forEach((col,i) => col.forEach(t => {
+    if (t.routineDefId===def.id) { existingByCol.set(`d${i}-am`,t); oldIds.add(t.id); }
+  }));
+  pmCols.forEach((col,i) => col.forEach(t => {
+    if (t.routineDefId===def.id) { existingByCol.set(`d${i}-pm`,t); oldIds.add(t.id); }
+  }));
+
+  const newAm=amCols.map(col=>col.filter(t=>t.routineDefId!==def.id));
+  const newPm=pmCols.map(col=>col.filter(t=>t.routineDefId!==def.id));
+  const today=new Date(); today.setHours(0,0,0,0);
+  const expired=def.expiresAt && new Date(`${def.expiresAt}T23:59:59`) < today;
+  const colIds=def.active&&!expired ? (resolveColIds(def,dateCols) ?? []) : [];
+  const keptIds=new Set();
+
+  colIds.forEach(colId => {
+    const m=colId.match(/^d(\d+)-(am|pm)$/); if(!m) return;
+    const di=+m[1], isAm=m[2]==="am", existing=existingByCol.get(colId);
+    const task=existing
+      ? {...existing,text:def.text,routine:def.routine,slotHint:def.slotHint,routineDefId:def.id}
+      : stampTodo({id:genId(),text:def.text,routine:def.routine,slotHint:def.slotHint,routineDefId:def.id});
+    keptIds.add(task.id);
+    if(isAm) newAm[di]=[...newAm[di],task]; else newPm[di]=[...newPm[di],task];
+  });
+
+  return {amCols:newAm,pmCols:newPm,removedIds:[...oldIds].filter(id=>!keptIds.has(id))};
 }
 
 // ── Sort Drag（列内並び替え専用）──────────────────────────────────────────────
@@ -527,7 +563,7 @@ function SlotColumn({ colId, isAm, todos, doneIds, onEdit, onDelete, onToggle, o
       style={{...FONT_STYLE,background:isAm?AM_BG:PM_BG,border:`1.5px solid ${isAm?AM_BORDER:PM_BORDER}`,borderRadius:12,padding:"12px 12px 10px",flex:1,minWidth:0}}>
       <div style={{fontSize:11,fontWeight:700,color:isAm?AM_HEAD:PM_HEAD,marginBottom:8}}>{isAm?"🌱 AM":"☀️ PM"}</div>
       {sorted.length===0 && <div style={{...FONT_STYLE,fontSize:11,color:"#ccc",textAlign:"center",padding:"14px 0",fontStyle:"italic"}}>タスクなし</div>}
-      {sorted.map((todo,i)=><TodoCard key={todo.id} todo={todo} sortIdx={i} colId={colId} isDone={doneIds.has(todo.id)} isAm={isAm} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle} sortDrag={sortDrag}/>)}
+      {sorted.map((todo,i)=><TodoCard key={todo.id} todo={todo} sortIdx={i} colId={colId} isDone={doneIds.has(todo.id)} isAm={isAm} onEdit={t=>onEdit(t,colId)} onDelete={onDelete} onToggle={onToggle} sortDrag={sortDrag}/>)}
       <button onClick={()=>onAdd(colId)} style={{...FONT_STYLE,marginTop:6,width:"100%",padding:"6px",background:"transparent",border:`1.5px dashed ${isAm?AM_BORDER:PM_BORDER}`,borderRadius:8,color:isAm?AM_TEXT:PM_TEXT,cursor:"pointer",fontSize:12,fontWeight:700}}>＋</button>
     </div>
   );
@@ -570,7 +606,7 @@ function InboxPage({ todos, doneIds, onEdit, onDelete, onToggle, onAdd, sortDrag
         <div style={{height:1,background:"#f0f0f0",marginBottom:12}}/>
         {sorted.length===0 && <div style={{...FONT_STYLE,fontSize:12,color:"#ccc",textAlign:"center",padding:"24px 0"}}>タスクがありません</div>}
         {sorted.map((t,i)=>(
-          <TodoCard key={t.id} todo={t} sortIdx={i} colId="inbox" isDone={doneIds.has(t.id)} isAm={false} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle} sortDrag={sortDrag}/>
+          <TodoCard key={t.id} todo={t} sortIdx={i} colId="inbox" isDone={doneIds.has(t.id)} isAm={false} onEdit={todo=>onEdit(todo,"inbox")} onDelete={onDelete} onToggle={onToggle} sortDrag={sortDrag}/>
         ))}
         <button onClick={onAdd} style={{...FONT_STYLE,marginTop:8,width:"100%",padding:"8px",background:"transparent",border:"1.5px dashed #ccc",borderRadius:8,color:"#aaa",fontSize:12,fontWeight:700,cursor:"pointer"}}>＋ 追加</button>
       </div>
@@ -670,9 +706,6 @@ function QuickEntry({ onAdd, dateCols }) {
   );
 }
 
-// ── Genre & AI (Weekly Review) ────────────────────────────────────────────────
-const GENRES=[{key:"work",label:"💼 仕事",color:"#2563b0",bg:"#e8f0fe"},{key:"home",label:"🏠 家事",color:"#b07020",bg:"#fef3e0"},{key:"health",label:"💪 健康",color:"#2a7a3a",bg:"#e4f5e4"},{key:"learn",label:"📚 学習",color:"#7030b0",bg:"#f3e8ff"},{key:"errand",label:"🛒 用事",color:"#c04060",bg:"#fce8f1"},{key:"other",label:"📌 その他",color:"#606060",bg:"#f0f0f0"}];
-const genreInfo = key => GENRES.find(g=>g.key===key) ?? GENRES[GENRES.length-1];
 // ルーティン同一性比較（JSON.stringifyのキー順序問題を回避）
 function sameRoutine(a, b) {
   if (!a || !b) return false;
@@ -680,248 +713,8 @@ function sameRoutine(a, b) {
   if (a.type === "weekly") return JSON.stringify([...a.days].sort()) === JSON.stringify([...b.days].sort());
   if (a.type === "monthly") return a.day === b.day;
   if (a.type === "date") return a.month === b.month && a.day === b.day;
-  return true; // daily
-}
-
-const AI_API_KEY = ""; // ← Anthropic APIキーをここに設定
-async function aiRequest(prompt) {
-  if (!AI_API_KEY) return null; // APIキー未設定時はnullを返す
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": AI_API_KEY, "anthropic-version": "2023-06-01" },
-      signal: controller.signal,
-      body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000, messages:[{role:"user",content:prompt}] })
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.content?.map(c=>c.text||"").join("") || "";
-  } catch(e) {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-async function classifyGenres(todos) {
-  if (!todos.length) return {};
-  const text=await aiRequest(`以下のタスクをwork/home/health/learn/errand/otherに分類。JSONのみ返す。例:{"id1":"work"}\n${todos.map(t=>`${t.id}: ${t.text}`).join("\n")}`);
-  if (!text) return {};
-  try { return JSON.parse(text.replace(/```json|```/g,"").trim()); } catch { return {}; }
-}
-async function suggestRedistribution(todos, dateCols) {
-  if (!todos.length) return [];
-  const days=dateCols.map((d,i)=>`${getDayLabel(i)}(${fmtDate(d)})`).join(", ");
-  const text=await aiRequest(`以下の積み残しタスクを来週(${days})に再分配。JSON配列のみ返す。例:[{"id":"x","day":0,"slot":"am","reason":"理由"}]\n${todos.map(t=>`${t.id}: ${t.text}(${genreInfo(t.genre||"other").label})`).join("\n")}`);
-  try { return JSON.parse(text.replace(/```json|```/g,"").trim()); } catch { return []; }
-}
-
-function WeeklyReview({ allTodos, doneIds, dateCols, onApply }) {
-  const overdue = allTodos.filter(t => isOverdue(t, doneIds));
-  const [genres, setGenres] = useState({});
-  const [proposals, setProposals] = useState([]);
-  const [approved, setApproved] = useState(new Set());
-  const [classifying, setClassifying] = useState(false);
-  const [suggesting, setSuggesting] = useState(false);
-  const [step, setStep] = useState("list");
-  const [filterGenre, setFilterGenre] = useState("all");
-
-  const getGenre = t => genres[t.id] ?? t.genre ?? null;
-
-  const runClassify = async () => {
-    setClassifying(true);
-    try {
-      const r = await classifyGenres(overdue.filter(t => !getGenre(t)));
-      setGenres(p => ({...p, ...r}));
-    } catch(e) {
-      console.warn("分類エラー:", e);
-    } finally {
-      setClassifying(false);
-      setStep("classified");
-    }
-  };
-
-  const runSuggest = async () => {
-    setSuggesting(true);
-    const r = await suggestRedistribution(overdue.map(t => ({...t, genre: getGenre(t) || "other"})), dateCols);
-    setProposals(r);
-    setApproved(new Set(r.map(p => p.id)));
-    setSuggesting(false);
-    setStep("proposed");
-  };
-
-  const togApprove = id => setApproved(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
-
-  const applyProposals = () => {
-    onApply(proposals.filter(p => approved.has(p.id)).map(p => ({
-      todo: {...overdue.find(t => t.id === p.id), genre: getGenre(overdue.find(t => t.id === p.id)) || "other"},
-      colId: `d${p.day}-${p.slot}`
-    })));
-    setStep("done");
-  };
-
-  // 開いた時に自動分類（APIキー設定済みの場合のみ）
-  useEffect(() => {
-    if (overdue.length === 0) { setStep("classified"); return; }
-    if (step === "list") {
-      if (AI_API_KEY) { runClassify(); }
-      else { setStep("classified"); }
-    }
-  }, []);
-
-  // ジャンル別グループ
-  const byGenre = GENRES.map(g => ({...g, todos: overdue.filter(t => (getGenre(t) || "other") === g.key)})).filter(g => g.todos.length > 0);
-
-  // ステップラベル
-  const stepLabels = [
-    {key:"list", label:"積み残し確認"},
-    {key:"classified", label:"AI分類完了"},
-    {key:"proposed", label:"再配置案"},
-    {key:"done", label:"完了"},
-  ];
-  const stepIdx = stepLabels.findIndex(s => s.key === step);
-
-  const card = {background:"#fff", border:"1.5px solid #e2e2e2", borderRadius:14, padding:"16px 18px", marginBottom:12};
-
-  if (overdue.length === 0) return (
-    <div style={{...FONT_STYLE, maxWidth:640, margin:"0 auto"}}>
-      <div style={{background:"#f2faf2", border:"1.5px solid #8ed08e", borderRadius:14, padding:"20px", textAlign:"center"}}>
-        <div style={{fontSize:32, marginBottom:8}}>🎉</div>
-        <div style={{fontSize:15, fontWeight:700, color:"#1a7a1a", marginBottom:4}}>積み残しなし！</div>
-        <div style={{fontSize:12, color:"#888"}}>すべてのタスクが完了しています</div>
-      </div>
-    </div>
-  );
-
-  return (
-    <div style={{...FONT_STYLE, maxWidth:640, margin:"0 auto"}}>
-
-      {/* ステップインジケーター */}
-      <div style={{display:"flex", gap:0, marginBottom:16, background:"#fff", borderRadius:10, overflow:"hidden", border:"1px solid #eee"}}>
-        {stepLabels.map((s,i) => (
-          <div key={s.key} style={{flex:1, padding:"9px 4px", textAlign:"center", fontSize:10, fontWeight:stepIdx===i?700:500,
-            color: stepIdx > i ? "#1b7a3a" : stepIdx===i ? PINK : "#bbb",
-            background: stepIdx > i ? "#f0faf0" : stepIdx===i ? "#fdf0f5" : "#fff",
-            borderRight: i<3 ? "1px solid #eee" : "none"}}>
-            {stepIdx > i ? "✓ " : ""}{s.label}
-          </div>
-        ))}
-      </div>
-
-      {/* サマリーカード */}
-      <div style={{background: overdue.length?"#fff8f0":"#f2faf2", border:`1.5px solid ${overdue.length?"#f5a55a":"#8ed08e"}`, borderRadius:14, padding:"16px 18px", marginBottom:16, display:"flex", alignItems:"center", gap:14}}>
-        <div style={{fontSize:28, flexShrink:0}}>{classifying?"⏳":"📋"}</div>
-        <div>
-          <div style={{fontSize:14, fontWeight:700, color:"#111", marginBottom:3}}>
-            {classifying ? "AIが分類中…" : `積み残しタスク ${overdue.length}件${step==="classified"||step==="proposed"||step==="done" ? " を分類しました" : ""}`}
-          </div>
-          <div style={{fontSize:12, color:"#888"}}>
-            {classifying ? "少々お待ちください" :
-             step==="list" ? "AIでジャンル分類して整理しましょう" :
-             step==="classified" ? "ジャンルを確認して再配置案を作成できます" :
-             step==="proposed" ? "配置先を確認してボードに反映しましょう" :
-             "ボードへの反映が完了しました"}
-          </div>
-        </div>
-      </div>
-
-      {/* 分類中スピナー */}
-      {classifying && (
-        <div style={{textAlign:"center", padding:"32px 0", color:"#aaa", fontSize:13}}>
-          <div style={{fontSize:28, marginBottom:8}}>✨</div>
-          分類中です...
-        </div>
-      )}
-
-      {/* 分類完了：ジャンル別表示 */}
-      {!classifying && (step==="classified" || step==="proposed" || step==="done") && (
-        <div>
-          {/* ジャンルフィルタ */}
-          <div style={{display:"flex", gap:6, marginBottom:14, overflowX:"auto", scrollbarWidth:"none"}}>
-            <button onClick={()=>setFilterGenre("all")} style={{...FONT_STYLE, padding:"5px 12px", borderRadius:99, fontSize:11, fontWeight:700, border:"1.5px solid", flexShrink:0, cursor:"pointer",
-              background: filterGenre==="all" ? PINK : "#fff",
-              color: filterGenre==="all" ? "#fff" : "#888",
-              borderColor: filterGenre==="all" ? PINK : "#e0e0e0"}}>
-              すべて ({overdue.length})
-            </button>
-            {byGenre.map(g => (
-              <button key={g.key} onClick={()=>setFilterGenre(g.key)} style={{...FONT_STYLE, padding:"5px 12px", borderRadius:99, fontSize:11, fontWeight:700, border:"1.5px solid", flexShrink:0, cursor:"pointer",
-                background: filterGenre===g.key ? g.color : "#fff",
-                color: filterGenre===g.key ? "#fff" : g.color,
-                borderColor: g.color}}>
-                {g.label} ({g.todos.length})
-              </button>
-            ))}
-          </div>
-
-          {/* タスク一覧 */}
-          {(filterGenre==="all" ? byGenre : byGenre.filter(g=>g.key===filterGenre)).map(g => (
-            <div key={g.key} style={card}>
-              <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:12}}>
-                <span style={{fontSize:18}}>{g.label.split(" ")[0]}</span>
-                <span style={{fontSize:13, fontWeight:700}}>{g.label.split(" ").slice(1).join(" ")}</span>
-                <span style={{fontSize:11, color:"#aaa", marginLeft:"auto"}}>{g.todos.length}件</span>
-              </div>
-              {g.todos.map(t => {
-                const isProp = proposals.find(p=>p.id===t.id);
-                const isApp = approved.has(t.id);
-                return (
-                  <div key={t.id} style={{display:"flex", alignItems:"flex-start", gap:10, padding:"10px 12px", background:"#fafafa", border:"1.5px solid #eee", borderRadius:10, marginBottom:8, opacity: step==="proposed"&&!isApp ? 0.45 : 1}}>
-                    {step==="proposed" && (
-                      <div onClick={()=>togApprove(t.id)} style={{width:16, height:16, border:`2px solid ${isApp?PINK:"#ddd"}`, borderRadius:4, flexShrink:0, marginTop:2, cursor:"pointer", background:isApp?PINK:"transparent", display:"flex", alignItems:"center", justifyContent:"center"}}>
-                        {isApp && <span style={{color:"#fff", fontSize:10}}>✓</span>}
-                      </div>
-                    )}
-                    <div style={{flex:1, fontSize:13, color:"#333", lineHeight:1.4}}>{t.text}</div>
-                    <div style={{display:"flex", flexDirection:"column", gap:4, alignItems:"flex-end", flexShrink:0}}>
-                      <span style={{fontSize:10, fontWeight:600, padding:"2px 7px", borderRadius:99, background:g.bg, color:g.color}}>{g.label}</span>
-                      {isProp && <span style={{fontSize:10, color:"#888"}}>{["月","火","水","木","金","土","日"][isProp.day]} {isProp.slot==="am"?"🌱AM":"☀️PM"}</span>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-
-          {/* アクションボタン */}
-          {step==="classified" && (
-            <div>
-              <button onClick={runSuggest} disabled={suggesting} style={{...FONT_STYLE, marginTop:6, width:"100%", padding:"12px", background:"#0d0d0d", color:"#fff", fontWeight:700, fontSize:13, borderRadius:10, border:"none", cursor:"pointer"}}>
-                {suggesting ? "⏳ 提案を作成中…" : "📅 AIに再配置を提案してもらう →"}
-              </button>
-              <button onClick={()=>setStep("done")} style={{...FONT_STYLE, marginTop:8, width:"100%", padding:"10px", background:"#fff", color:"#555", fontWeight:600, fontSize:12, borderRadius:10, border:"1.5px solid #e0e0e0", cursor:"pointer"}}>
-                スキップして自分で配置する
-              </button>
-            </div>
-          )}
-          {step==="proposed" && (
-            <div>
-              <button onClick={applyProposals} style={{...FONT_STYLE, marginTop:6, width:"100%", padding:"12px", background:PINK, color:"#fff", fontWeight:700, fontSize:13, borderRadius:10, border:"none", cursor:"pointer"}}>
-                ✅ チェックしたタスクをボードに配置する ({approved.size}件)
-              </button>
-              <button onClick={()=>setStep("classified")} style={{...FONT_STYLE, marginTop:8, width:"100%", padding:"10px", background:"#fff", color:"#555", fontWeight:600, fontSize:12, borderRadius:10, border:"1.5px solid #e0e0e0", cursor:"pointer"}}>
-                ← 戻る
-              </button>
-            </div>
-          )}
-          {step==="done" && (
-            <div style={{textAlign:"center", padding:"16px", background:"#f2faf2", borderRadius:12, marginTop:8}}>
-              <div style={{fontSize:24, marginBottom:6}}>🎉</div>
-              <div style={{fontSize:13, fontWeight:700, color:"#1a7a1a"}}>ボードへの反映が完了しました</div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 分類前：手動分類ボタン */}
-      {!classifying && step==="list" && (
-        <button onClick={runClassify} style={{...FONT_STYLE, width:"100%", padding:"12px", background:"#0d0d0d", color:"#fff", fontWeight:700, fontSize:13, borderRadius:10, border:"none", cursor:"pointer"}}>
-          ✨ AIでジャンル分類する
-        </button>
-      )}
-    </div>
-  );
+  if (a.type === "nweekly" || a.type === "ndaily") return a.interval === b.interval && a.startDate === b.startDate;
+  return a.type === "daily";
 }
 
 function RoutineManager({ routines, onAdd, onUpdate, onDelete, onToggle }) {
@@ -1209,39 +1002,6 @@ function QuickGuide() {
       </GuideCard>
 
 
-      {/* 週次レビュー - 強調 */}
-      <div style={{ background:"linear-gradient(135deg,#fff0f4,#fce8f1)", border:"2px solid #d4457a", borderRadius:14, padding:"18px 16px", marginBottom:16 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
-          <span style={{ fontSize:24 }}>⏰</span>
-          <div>
-            <div style={{ ...FONT_STYLE, fontSize:16, fontWeight:700, color:"#c04060" }}>週次レビュー</div>
-            <div style={{ ...FONT_STYLE, fontSize:10, color:PINK, fontWeight:700, letterSpacing:".06em" }}>このアプリの最先端機能</div>
-          </div>
-        </div>
-        <div style={{ background:"#fff", border:"1.5px solid #f0c0cc", borderRadius:10, padding:"12px", marginBottom:12, fontSize:12, color:"#555", lineHeight:1.7 }}>
-          <strong>7日以上チェックのないタスク</strong>が「積み残し」として自動検出。<br/>
-          <strong>AIがジャンル分類＋来週への最適な再分配を提案</strong>してくれます。
-        </div>
-        <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
-          {[
-            ["1","積み残しを確認","7日以上チェックなしのタスク一覧が表示されます"],
-            ["2","✨ AIでジャンル自動分類","💼仕事 / 🏠家事 / 💪健康 / 📚学習 / 🛒用事 / 📌その他"],
-            ["3","📅 来週への再分配を承認","AIが提案した最適な日程・AM/PMをワンタップで反映"],
-          ].map(([n,title,desc])=>(
-            <div key={n} style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"12px", background:"#fff", border:"1.5px solid #f0d0d8", borderRadius:10 }}>
-              <div style={{ width:26, height:26, borderRadius:"50%", background:PINK, color:"#fff", fontSize:13, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>{n}</div>
-              <div>
-                <div style={{ ...FONT_STYLE, fontSize:13, fontWeight:700, color:"#111", marginBottom:2 }}>{title}</div>
-                <div style={{ ...FONT_STYLE, fontSize:11, color:"#888" }}>{desc}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{ background:PINK, borderRadius:10, padding:"10px 14px", fontSize:11, color:"#fff", fontWeight:700, textAlign:"center", letterSpacing:".04em" }}>
-          🎉 タスクを溜め込まず、毎週リセット！
-        </div>
-      </div>
-
       {/* ゴミ箱 */}
       <GuideCard emoji="🗑" title="ゴミ箱" color="#666" bg="#f5f5f5" border="#ddd">
         <div style={{ fontSize:12, color:"#555", lineHeight:1.7, marginBottom:12 }}>
@@ -1391,9 +1151,10 @@ function App() {
     if (colId==="inbox") { setInbox(reorder); return; }
     const m=colId.match(/^d(\d+)-(am|pm)$/); if(!m) return;
     const di=+m[1], isAm=m[2]==="am";
-    if(isAm) setAmCols(p=>{const n=[...p]; n[di]=reorder(n[di]); return n;});
-    else     setPmCols(p=>{const n=[...p]; n[di]=reorder(n[di]); return n;});
-  }, []);
+    const {setAm,setPm}=getWeekData(boardWeek);
+    const setter=isAm?setAm:setPm;
+    setter(p=>{const n=[...p]; n[di]=reorder(n[di]); return n;});
+  }, [boardWeek]);
   const sortDrag = useSortDrag({ onReorder: handleReorder });
   const [saveFlash,setSaveFlash]=useState(false);
   const [saveError,setSaveError]=useState(false);
@@ -1447,9 +1208,10 @@ function App() {
       inbox,amCols,pmCols,doneIds,routines,trash,passwordHash:savedHash,
       amByDate,pmByDate,
       extraWeeks:[{cols:nextWeek1Cols,am:amNext1,pm:pmNext1},{cols:nextWeek2Cols,am:amNext2,pm:pmNext2}]
-    }, dateCols, ()=>setSaveError(true));
-    setSaveFlash(true); setSaveError(false);
-    const t=setTimeout(()=>setSaveFlash(false),2200); return()=>clearTimeout(t);
+    }, dateCols,
+      ()=>{ setSaveError(true); setSaveFlash(false); },
+      ()=>{ setSaveError(false); setSaveFlash(true); setTimeout(()=>setSaveFlash(false),2200); }
+    );
   },[inbox,amCols,pmCols,amNext1,pmNext1,amNext2,pmNext2,amByDate,pmByDate,doneIds,routines,trash,loaded,authed]);
 
   // colId helpers
@@ -1458,17 +1220,27 @@ function App() {
     setInbox(p=>p.filter(t=>t.id!==id));
     setAmCols(p=>p.map(c=>c.filter(t=>t.id!==id)));
     setPmCols(p=>p.map(c=>c.filter(t=>t.id!==id)));
+    setAmNext1(p=>p.map(c=>c.filter(t=>t.id!==id)));
+    setPmNext1(p=>p.map(c=>c.filter(t=>t.id!==id)));
+    setAmNext2(p=>p.map(c=>c.filter(t=>t.id!==id)));
+    setPmNext2(p=>p.map(c=>c.filter(t=>t.id!==id)));
   }, []);
-  const addToCol = useCallback((todo, colId) => {
+  const addToCol = useCallback((todo, colId, week=0) => {
     const p=parseColId(colId); if(!p) return;
     if (p.type==="inbox") setInbox(prev=>[...prev,todo]);
-    else if (p.type==="am") setAmCols(prev=>{const n=[...prev]; n[p.dayIndex]=[...n[p.dayIndex],todo]; return n;});
-    else if (p.type==="pm") setPmCols(prev=>{const n=[...prev]; n[p.dayIndex]=[...n[p.dayIndex],todo]; return n;});
+    else {
+      const setter = week===1
+        ? (p.type==="am"?setAmNext1:setPmNext1)
+        : week===2
+          ? (p.type==="am"?setAmNext2:setPmNext2)
+          : (p.type==="am"?setAmCols:setPmCols);
+      setter(prev=>{const n=[...prev]; n[p.dayIndex]=[...n[p.dayIndex],todo]; return n;});
+    }
   }, []);
 
   // CRUD
-  const handleEdit   = (todo,colId) => { setEditTodo({todo,colId}); setShowModal(true); };
-  const handleAdd    = colId => { setEditTodo({todo:{id:null,text:"",routine:null},colId}); setShowModal(true); };
+  const handleEdit   = (todo,colId) => { setEditTodo({todo,colId,week:colId==="inbox"?0:boardWeek}); setShowModal(true); };
+  const handleAdd    = colId => { setEditTodo({todo:{id:null,text:"",routine:null},colId,week:colId==="inbox"?0:boardWeek}); setShowModal(true); };
   const handleToggle = id => {
     const now=Date.now();
     setDoneIds(p=>{const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n;});
@@ -1490,20 +1262,21 @@ function App() {
   };
   const handleSave = updated => {
     if (!editTodo) return;
+    const targetWeek=editTodo.week ?? 0;
     if (!updated.id) {
       const base=stampTodo({...updated,id:genId()});
-      const {cols:activeCols}=getWeekData(boardWeek);
+      const {cols:activeCols}=getWeekData(targetWeek);
       const colIds=resolveColIds(base,activeCols);
       if (colIds?.length) {
-        const {setAm,setPm}=getWeekData(boardWeek);
+        const {setAm,setPm}=getWeekData(targetWeek);
         colIds.forEach(colId=>{ const p=parseColId(colId); if(!p)return; if(p.type==="inbox")setInbox(prev=>[...prev,{...base,id:genId()}]); else if(p.type==="am")setAm(prev=>{const n=[...prev];n[p.dayIndex]=[...n[p.dayIndex],{...base,id:genId()}];return n;}); else setPm(prev=>{const n=[...prev];n[p.dayIndex]=[...n[p.dayIndex],{...base,id:genId()}];return n;}); });
-      } else addToCol(base, editTodo.colId);
+      } else addToCol(base, editTodo.colId, targetWeek);
     } else {
-      const {cols:activeCols}=getWeekData(boardWeek);
+      const {cols:activeCols}=getWeekData(targetWeek);
       const colIds=resolveColIds(updated,activeCols);
       if (colIds?.length) {
         removeFromAll(updated.id);
-        const {setAm,setPm}=getWeekData(boardWeek);
+        const {setAm,setPm}=getWeekData(targetWeek);
         colIds.forEach(colId=>{ const p=parseColId(colId); if(!p)return; if(p.type==="inbox")setInbox(prev=>[...prev,{...updated,id:genId()}]); else if(p.type==="am")setAm(prev=>{const n=[...prev];n[p.dayIndex]=[...n[p.dayIndex],{...updated,id:genId()}];return n;}); else setPm(prev=>{const n=[...prev];n[p.dayIndex]=[...n[p.dayIndex],{...updated,id:genId()}];return n;}); });
       } else {
         const upd=l=>l.map(t=>t.id===updated.id?updated:t);
@@ -1537,22 +1310,20 @@ function App() {
   };
 
   // Routine CRUD
-  const applyRoutineDef = (newRtns, am, pm) => autoGenerateFromDefinitions(am.map(c=>c.filter(t=>!t.routineDefId)), pm.map(c=>c.filter(t=>!t.routineDefId)), newRtns, dateCols);
-  const handleAddRoutine = def => { const next=[...routines,def]; setRoutines(next); const r=applyRoutineDef(next,amCols,pmCols); setAmCols(r.amCols); setPmCols(r.pmCols); };
-  const handleUpdateRoutine = def => { const next=routines.map(r=>r.id===def.id?def:r); setRoutines(next); const r=applyRoutineDef(next,amCols,pmCols); setAmCols(r.amCols); setPmCols(r.pmCols); };
-  const handleDeleteRoutine = id => { setRoutines(p=>p.filter(r=>r.id!==id)); setAmCols(p=>p.map(c=>c.filter(t=>t.routineDefId!==id))); setPmCols(p=>p.map(c=>c.filter(t=>t.routineDefId!==id))); };
-  const handleToggleRoutine = id => { const def=routines.find(r=>r.id===id); if(def) handleUpdateRoutine({...def,active:!def.active}); };
-  const handleApplyReview = proposals => {
-    proposals.forEach(({todo,colId})=>addToCol(stampTodo({...todo,id:genId(),createdAt:Date.now(),lastCheckedAt:null}),colId));
-    proposals.forEach(({todo})=>{
-      const upd=l=>l.map(t=>t.id===todo.id?{...t,genre:todo.genre}:t);
-      setInbox(upd);
-      setAmCols(p=>p.map(upd)); setPmCols(p=>p.map(upd));
-      setAmNext1(p=>p.map(upd)); setPmNext1(p=>p.map(upd));
-      setAmNext2(p=>p.map(upd)); setPmNext2(p=>p.map(upd));
-    });
+  const applyRoutineDef = def => {
+    const r=syncRoutineDefinition(amCols,pmCols,def,dateCols);
+    setAmCols(r.amCols); setPmCols(r.pmCols);
+    if(r.removedIds.length) setDoneIds(p=>{const n=new Set(p);r.removedIds.forEach(id=>n.delete(id));return n;});
   };
-
+  const handleAddRoutine = def => { setRoutines(p=>[...p,def]); applyRoutineDef(def); };
+  const handleUpdateRoutine = def => { setRoutines(p=>p.map(r=>r.id===def.id?def:r)); applyRoutineDef(def); };
+  const handleDeleteRoutine = id => {
+    const removedIds=[...amCols.flat(),...pmCols.flat()].filter(t=>t.routineDefId===id).map(t=>t.id);
+    setRoutines(p=>p.filter(r=>r.id!==id));
+    setAmCols(p=>p.map(c=>c.filter(t=>t.routineDefId!==id))); setPmCols(p=>p.map(c=>c.filter(t=>t.routineDefId!==id)));
+    if(removedIds.length) setDoneIds(p=>{const n=new Set(p);removedIds.forEach(taskId=>n.delete(taskId));return n;});
+  };
+  const handleToggleRoutine = id => { const def=routines.find(r=>r.id===id); if(def) handleUpdateRoutine({...def,active:!def.active}); };
   // Auth
   const handleAuth = async (pw, pw2) => {
     if (!pw.trim()) { setAuthError("パスワードを入力してください"); return; }
@@ -1577,12 +1348,7 @@ function App() {
      ...amPrev2.flat(), ...pmPrev2.flat()],
     [inbox,amCols,pmCols,amNext1,pmNext1,amNext2,pmNext2,amPrev1,pmPrev1,amPrev2,pmPrev2]
   );
-  const overdueCnt = useMemo(() =>
-    allTodos.filter(t=>isOverdue(t,doneIds)).length,
-    [allTodos, doneIds]
-  );
   const TODAY = useMemo(()=>{ const d=new Date(); d.setHours(0,0,0,0); return d; }, []);
-  const accents=[PINK,"#c9437a","#be4280","#b34186","#a8408c","#9e3f8e","#934090"];
   const sp={doneIds,onEdit:(t,c)=>handleEdit(t,c),onDelete:handleDelete,onToggle:handleToggle,onAdd:handleAdd,sortDrag};
   const badge=(n,bg)=><span style={{position:"absolute",top:-6,right:-6,background:bg,color:"#fff",fontSize:10,fontWeight:700,borderRadius:10,padding:"1px 6px"}}>{n}</span>;
 
@@ -1630,10 +1396,11 @@ function App() {
         }
         // v2: amByDate/pmByDateを含む完全バックアップ / v1: 今週分のみ(旧形式互換)
         const abd = d.amByDate ?? {}, pbd = d.pmByDate ?? {};
+        const hasDatedData = d.version>=2 && Object.keys(abd).length>0 && Object.keys(pbd).length>0;
         setAmByDate(abd); setPmByDate(pbd);
         setInbox(d.inbox ?? []);
-        setAmCols(d.amCols ?? dateCols.map(dt=>abd[dt.toDateString()]||[]));
-        setPmCols(d.pmCols ?? dateCols.map(dt=>pbd[dt.toDateString()]||[]));
+        setAmCols(hasDatedData ? dateCols.map(dt=>abd[dt.toDateString()]||[]) : (d.amCols ?? dateCols.map(()=>[])));
+        setPmCols(hasDatedData ? dateCols.map(dt=>pbd[dt.toDateString()]||[]) : (d.pmCols ?? dateCols.map(()=>[])));
         setAmNext1(nextWeek1Cols.map(dt=>abd[dt.toDateString()]||[]));
         setPmNext1(nextWeek1Cols.map(dt=>pbd[dt.toDateString()]||[]));
         setAmNext2(nextWeek2Cols.map(dt=>abd[dt.toDateString()]||[]));
@@ -1734,7 +1501,6 @@ function App() {
         </div>
       </div>
     );
-    return null;
   })();
 
   return (
@@ -1747,11 +1513,10 @@ function App() {
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           {/* PC時のみタブをヘッダー右に表示 */}
-          {layout!=="stack" && [["board","📋 ボード"],["inbox","📥 ストック"],["routines","🔁 管理"],["review","⏰ レビュー"],["trash","🗑"],["guide","📖"]].map(([key,label])=>(
+          {layout!=="stack" && [["board","📋 ボード"],["inbox","📥 ストック"],["routines","🔁 管理"],["trash","🗑"],["guide","📖"]].map(([key,label])=>(
             <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"5px 11px",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",border:"1.5px solid",position:"relative",flexShrink:0,background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0"}}>
               {label}
               {key==="inbox"&&inbox.length>0 && badge(inbox.length,PINK)}
-              {key==="review"&&overdueCnt>0 && badge(overdueCnt,PINK)}
               {key==="routines"&&routines.filter(r=>r.active).length>0 && badge(routines.filter(r=>r.active).length,"#555")}
               {key==="trash"&&trash.length>0 && badge(trash.length,"#aaa")}
             </button>
@@ -1797,10 +1562,9 @@ function App() {
       {/* ── メインタブ：スマホのみ表示（PC はヘッダー右に統合済み） ── */}
       {layout==="stack" && (
         <div style={{display:"flex",gap:6,marginBottom:tab==="board"?6:16,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none",flexShrink:0,padding:"0 12px"}}>
-          {[["board","📋"],["inbox","📥"],["routines","🔁"],["review","⏰"],["trash","🗑"],["guide","📖"]].map(([key,icon])=>(
+          {[["board","📋"],["inbox","📥"],["routines","🔁"],["trash","🗑"],["guide","📖"]].map(([key,icon])=>(
             <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,padding:"7px 13px",borderRadius:8,fontSize:16,cursor:"pointer",border:"1.5px solid",flexShrink:0,position:"relative",background:tab===key?"#0d0d0d":"#fff",color:tab===key?"#fff":"#555",borderColor:tab===key?"#0d0d0d":"#e0e0e0"}}>
               {icon}
-              {key==="review"&&overdueCnt>0 && badge(overdueCnt,PINK)}
               {key==="routines"&&routines.filter(r=>r.active).length>0 && badge(routines.filter(r=>r.active).length,"#555")}
               {key==="trash"&&trash.length>0 && badge(trash.length,"#aaa")}
             </button>
@@ -1827,7 +1591,6 @@ function App() {
       {tab==="guide" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><QuickGuide/></div>
       :tab==="trash" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><TrashBin trash={trash} onRestore={handleRestore} onPermanentDelete={id=>setTrash(p=>p.filter(t=>t.id!==id))} onClearAll={()=>setTrash([])}/></div>
       :tab==="routines" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><RoutineManager routines={routines} onAdd={handleAddRoutine} onUpdate={handleUpdateRoutine} onDelete={handleDeleteRoutine} onToggle={handleToggleRoutine}/></div>
-      :tab==="review" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><WeeklyReview allTodos={allTodos} doneIds={doneIds} dateCols={dateCols} onApply={handleApplyReview}/></div>
       :tab==="inbox" ? <div style={{flex:layout==="stack"?1:"unset",overflowY:layout==="stack"?"auto":"visible",padding:layout==="stack"?"0 12px 24px":"0"}}><InboxPage todos={inbox} {...sp} onAdd={()=>handleAdd("inbox")} onQuickAdd={handleQuickAdd} dateCols={dateCols}/></div>
 
       :boardContent}
