@@ -484,7 +484,7 @@ function TodoCard({ todo, isDone, isAm, sortIdx, colId, onEdit, onDelete, onTogg
         </button>
         {/* テキスト */}
         <div onClick={()=>onEdit(todo)} style={{flex:1,minWidth:0,cursor:"pointer",padding:"2px 0 4px"}}>
-          <div style={{...FONT_STYLE,fontSize:imp&&!isDone?15:14,fontWeight:imp&&!isDone?700:500,color:isDone?"#aaa":imp?IMP_RED_TEXT:"#111",textDecoration:isDone?"line-through":"none",lineHeight:1.5,wordBreak:"break-word"}}>{todo.text}</div>
+          <div style={{...FONT_STYLE,fontSize:imp&&!isDone?14:13,fontWeight:imp&&!isDone?700:500,color:isDone?"#aaa":imp?IMP_RED_TEXT:"#111",textDecoration:isDone?"line-through":"none",lineHeight:1.5,wordBreak:"break-word"}}>{todo.text}</div>
           <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:imp||lbl?4:0}}>
             {imp&&!isDone && <span style={{...FONT_STYLE,fontSize:10,fontWeight:700,color:IMP_RED_TEXT,background:"#F7C1C1",borderRadius:99,padding:"2px 8px"}}>‼️ 重要</span>}
             {lbl && <span style={{...FONT_STYLE,fontSize:10,fontWeight:700,color:ct,background:cb,borderRadius:4,padding:"2px 8px"}}>🔁 {lbl}</span>}
@@ -525,10 +525,10 @@ function SlotColumn({ colId, isAm, todos, doneIds, onEdit, onDelete, onToggle, o
   return (
     <div data-colid={colId}
       style={{...FONT_STYLE,background:isAm?AM_BG:PM_BG,border:`1.5px solid ${isAm?AM_BORDER:PM_BORDER}`,borderRadius:12,padding:"12px 12px 10px",flex:1,minWidth:0}}>
-      <div style={{fontSize:11,fontWeight:700,color:isAm?AM_HEAD:PM_HEAD,marginBottom:8}}>{isAm?"🌱 AM":"☀️ PM"}</div>
-      {sorted.length===0 && <div style={{...FONT_STYLE,fontSize:11,color:"#ccc",textAlign:"center",padding:"14px 0",fontStyle:"italic"}}>タスクなし</div>}
+      <div style={{fontSize:10,fontWeight:700,color:isAm?AM_HEAD:PM_HEAD,marginBottom:8}}>{isAm?"🌱 AM":"☀️ PM"}</div>
+      {sorted.length===0 && <div style={{...FONT_STYLE,fontSize:10,color:"#ccc",textAlign:"center",padding:"14px 0",fontStyle:"italic"}}>タスクなし</div>}
       {sorted.map((todo,i)=><TodoCard key={todo.id} todo={todo} sortIdx={i} colId={colId} isDone={doneIds.has(todo.id)} isAm={isAm} onEdit={t=>onEdit(t,colId)} onDelete={onDelete} onToggle={onToggle} sortDrag={sortDrag}/>)}
-      <button onClick={()=>onAdd(colId)} style={{...FONT_STYLE,marginTop:6,width:"100%",minHeight:42,padding:"8px",background:"transparent",border:`1.5px dashed ${isAm?AM_BORDER:PM_BORDER}`,borderRadius:9,color:isAm?AM_TEXT:PM_TEXT,cursor:"pointer",fontSize:12,fontWeight:700}}>＋ タスクを追加</button>
+      <button onClick={()=>onAdd(colId)} style={{...FONT_STYLE,marginTop:6,width:"100%",minHeight:42,padding:"8px",background:"transparent",border:`1.5px dashed ${isAm?AM_BORDER:PM_BORDER}`,borderRadius:9,color:isAm?AM_TEXT:PM_TEXT,cursor:"pointer",fontSize:11,fontWeight:700}}>＋ タスクを追加</button>
     </div>
   );
 }
@@ -563,8 +563,8 @@ function MobileDaySection({ defaultOpen=false, dayIndex, date, amTodos, pmTodos,
       <button onClick={()=>setOpen(p=>!p)} style={{...FONT_STYLE,width:"100%",minHeight:58,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:isToday?PINK_LIGHT:"#fff",border:`${isToday?2:1.5}px solid ${isToday?PINK:"#e2e2e2"}`,borderRadius:open?"14px 14px 8px 8px":14,boxShadow:"0 1px 4px rgba(0,0,0,.05)",cursor:"pointer",textAlign:"left"}}>
         <span style={{width:4,height:26,background:isToday?PINK:accent,borderRadius:3,flexShrink:0}}/>
         <span style={{flex:1,minWidth:0}}>
-          <span style={{display:"block",fontSize:14,fontWeight:700,color:isToday?PINK:"#222"}}>{getDayLabel(dayIndex,date)} <span style={{fontWeight:500,color:"#888"}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</span></span>
-          <span style={{display:"block",fontSize:11,color:"#999",marginTop:2}}>🌱 {amTodos.length}件　☀️ {pmTodos.length}件{done>0?`　✓ ${done}/${total}`:""}</span>
+          <span style={{display:"block",fontSize:13,fontWeight:700,color:isToday?PINK:"#222"}}>{getDayLabel(dayIndex,date)} <span style={{fontWeight:500,color:"#888"}}>{fmtDate(date)}（{DAYS_JP[date.getDay()]}）</span></span>
+          <span style={{display:"block",fontSize:10,color:"#999",marginTop:2}}>🌱 {amTodos.length}件　☀️ {pmTodos.length}件{done>0?`　✓ ${done}/${total}`:""}</span>
         </span>
         <span style={{fontSize:18,color:"#999",transform:open?"rotate(90deg)":"none",transition:"transform .15s"}}>›</span>
       </button>
@@ -583,8 +583,8 @@ function InboxPage({ todos, doneIds, onEdit, onDelete, onToggle, onAdd, sortDrag
       <div style={{...FONT_STYLE,background:"#fff",border:"1.5px solid #e2e2e2",borderRadius:14,padding:"16px 14px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
         <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:12}}>
           <div style={{width:3,height:16,background:PINK,borderRadius:2}}/>
-          <span style={{...FONT_STYLE,fontSize:14,fontWeight:700,color:"#111"}}>ストック</span>
-          <span style={{...FONT_STYLE,fontSize:11,color:"#aaa",marginLeft:4}}>とりあえずためておく場所</span>
+          <span style={{...FONT_STYLE,fontSize:13,fontWeight:700,color:"#111"}}>ストック</span>
+          <span style={{...FONT_STYLE,fontSize:10,color:"#aaa",marginLeft:4}}>とりあえずためておく場所</span>
         </div>
         <div style={{height:1,background:"#f0f0f0",marginBottom:12}}/>
         {sorted.length===0 && <div style={{...FONT_STYLE,fontSize:12,color:"#ccc",textAlign:"center",padding:"24px 0"}}>タスクがありません</div>}
@@ -648,7 +648,7 @@ function QuickEntry({ onAdd, dateCols }) {
   const chipStyle = (color,bg) => ({...FONT_STYLE,display:"inline-flex",alignItems:"center",padding:isMobile?"4px 8px":"4px 9px",borderRadius:99,fontSize:isMobile?10:11,fontWeight:700,cursor:"pointer",border:"1px solid",background:bg,color,borderColor:color+"55",whiteSpace:"nowrap",userSelect:"none"});
 
   if(isMobile&&!expanded) return (
-    <button onClick={()=>setExpanded(true)} style={{...FONT_STYLE,width:"100%",minHeight:52,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"12px 16px",marginBottom:12,background:"#0d0d0d",color:"#fff",border:"none",borderRadius:13,fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 3px 10px rgba(0,0,0,.12)"}}>
+    <button onClick={()=>setExpanded(true)} style={{...FONT_STYLE,width:"100%",minHeight:52,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"12px 16px",marginBottom:12,background:"#0d0d0d",color:"#fff",border:"none",borderRadius:13,fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 3px 10px rgba(0,0,0,.12)"}}>
       <span style={{fontSize:20,lineHeight:1}}>＋</span> タスクを追加
     </button>
   );
@@ -656,7 +656,7 @@ function QuickEntry({ onAdd, dateCols }) {
   return (
     <div style={{...FONT_STYLE,background:"#fff",border:`1.5px solid ${focused?PINK:"#d8d8d8"}`,borderRadius:12,padding:window.innerWidth<720?"10px 12px":"14px 16px",marginBottom:12,boxShadow:focused?`0 0 0 3px ${PINK_LIGHT}`:"0 1px 3px rgba(0,0,0,.06)",boxSizing:"border-box",width:"100%",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
-        <span style={{fontSize:12,fontWeight:700,color:PINK}}>＋ タスクを追加</span>
+        <span style={{fontSize:11,fontWeight:700,color:PINK}}>＋ タスクを追加</span>
         {!isMobile && <span style={{fontSize:10,color:"#bbb",marginLeft:"auto"}}>⌘Enter</span>}
         {isMobile && <button onClick={()=>{setExpanded(false);setText("");}} aria-label="入力を閉じる" style={{marginLeft:"auto",width:32,height:32,border:"none",borderRadius:8,background:"#f3f3f3",color:"#888",fontSize:18,cursor:"pointer"}}>×</button>}
       </div>
@@ -665,7 +665,7 @@ function QuickEntry({ onAdd, dateCols }) {
       <textarea ref={textareaRef} value={text} onChange={e=>setText(e.target.value)} onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
         onKeyDown={e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();submit();}}}
         rows={2} placeholder="タスク名 + 日時語句…"
-        style={{...FONT_STYLE,width:"100%",background:"#f7f7f7",border:"1.5px solid #e8e8e8",borderRadius:6,padding:"9px 11px",fontSize:13,color:"#333",lineHeight:1.6,resize:"none",outline:"none",boxSizing:"border-box"}}/>
+        style={{...FONT_STYLE,width:"100%",background:"#f7f7f7",border:"1.5px solid #e8e8e8",borderRadius:6,padding:"9px 11px",fontSize:12,color:"#333",lineHeight:1.6,resize:"none",outline:"none",boxSizing:"border-box"}}/>
 
       {/* ① ヒントチップ：横スクロール1行 */}
       <div style={{display:"flex",flexWrap:isMobile?"nowrap":"wrap",overflowX:isMobile?"auto":"visible",WebkitOverflowScrolling:"touch",gap:6,marginTop:8,paddingBottom:isMobile?3:0}}>
@@ -1508,8 +1508,8 @@ function App() {
     <div style={{...FONT_STYLE,height:layout==="stack"?"100dvh":"auto",minHeight:layout==="stack"?"unset":"100vh",background:"#f5f6f8",display:layout==="stack"?"flex":"block",flexDirection:"column",overflow:"hidden",boxSizing:"border-box"}}>
       <div style={{marginBottom:layout==="stack"?8:16,padding:layout==="stack"?"calc(8px + env(safe-area-inset-top)) 12px 4px":"0",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,gap:6}}>
         <div style={{display:"flex",alignItems:layout==="stack"?"flex-start":"baseline",flexDirection:layout==="stack"?"column":"row",gap:layout==="stack"?1:20}}>
-          <h1 style={{...FONT_STYLE,margin:0,fontSize:layout==="stack"?11:20,fontWeight:700,color:layout==="stack"?"#999":"#0d0d0d",letterSpacing:layout==="stack"?".08em":"normal"}}>TASK BOARD</h1>
-          <div style={{...FONT_STYLE,fontSize:layout==="stack"?17:13,fontWeight:layout==="stack"?700:400,color:"#0d0d0d"}}>{layout==="stack"?`${new Date().getMonth()+1}月${new Date().getDate()}日（${DAYS_JP[new Date().getDay()]}）`:`${new Date().getFullYear()}年${new Date().getMonth()+1}月${new Date().getDate()}日 (${DAYS_JP[new Date().getDay()]})`}</div>
+          <h1 style={{...FONT_STYLE,margin:0,fontSize:layout==="stack"?10:20,fontWeight:700,color:layout==="stack"?"#999":"#0d0d0d",letterSpacing:layout==="stack"?".08em":"normal"}}>TASK BOARD</h1>
+          <div style={{...FONT_STYLE,fontSize:layout==="stack"?15:13,fontWeight:layout==="stack"?700:400,color:"#0d0d0d"}}>{layout==="stack"?`${new Date().getMonth()+1}月${new Date().getDate()}日（${DAYS_JP[new Date().getDay()]}）`:`${new Date().getFullYear()}年${new Date().getMonth()+1}月${new Date().getDate()}日 (${DAYS_JP[new Date().getDay()]})`}</div>
           {urlUser!=="main" && <div style={{...FONT_STYLE,fontSize:11,fontWeight:700,color:"#fff",background:PINK,borderRadius:20,padding:"2px 10px"}}>{urlUser}</div>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -1523,7 +1523,7 @@ function App() {
             </button>
           ))}
           {layout!=="stack" && <div style={{width:1,height:20,background:"#e0e0e0",margin:"0 2px"}}/>}
-          <div style={{...FONT_STYLE,fontSize:layout==="stack"?10:12,color:saveError?"#cc3333":savePending?"#999":saveFlash?"#1b7a3a":"#bbb",transition:"color .25s",whiteSpace:"nowrap"}}>{saveError?"⚠ 保存失敗":savePending?"保存中…":saveFlash?"✓ 保存済み":""}</div>
+          <div style={{...FONT_STYLE,fontSize:layout==="stack"?9:12,color:saveError?"#cc3333":savePending?"#999":saveFlash?"#1b7a3a":"#bbb",transition:"color .25s",whiteSpace:"nowrap"}}>{saveError?"⚠ 保存失敗":savePending?"保存中…":saveFlash?"✓ 保存済み":""}</div>
           <button onClick={()=>setShowSettings(true)} style={{width:44,height:44,background:"#fff",border:"1px solid #e4e4e4",borderRadius:12,cursor:"pointer",fontSize:20,color:"#777",padding:0,lineHeight:1}} title="バックアップ・設定">⚙️</button>
         </div>
       </div>
@@ -1566,7 +1566,7 @@ function App() {
           {[[-2,"先々週",true],[-1,"先週",true],[0,"今週",false],[1,"来週",false],[2,"再来週",false]].map(([w,label,readOnly])=>{
             const isActive=boardWeek===w;
             return (
-              <button key={w} onClick={()=>setBoardWeek(w)} style={{...FONT_STYLE,padding:layout==="stack"?"7px 10px":"5px 14px",borderRadius:20,fontSize:12,fontWeight:700,cursor:"pointer",border:"1.5px solid",flexShrink:0,
+              <button key={w} onClick={()=>setBoardWeek(w)} style={{...FONT_STYLE,padding:layout==="stack"?"7px 10px":"5px 14px",borderRadius:20,fontSize:layout==="stack"?11:12,fontWeight:700,cursor:"pointer",border:"1.5px solid",flexShrink:0,
                 background:isActive?(readOnly?"#888":PINK):"#fff",
                 color:isActive?"#fff":(readOnly?"#aaa":"#555"),
                 borderColor:isActive?(readOnly?"#888":PINK):(readOnly?"#e8e8e8":"#e0e0e0")}}>
@@ -1585,8 +1585,8 @@ function App() {
       :boardContent}
       {layout==="stack" && <nav aria-label="メインナビゲーション" style={{position:"fixed",left:0,right:0,bottom:0,zIndex:1500,display:"grid",gridTemplateColumns:"repeat(5,1fr)",background:"rgba(255,255,255,.96)",borderTop:"1px solid #ddd",boxShadow:"0 -4px 18px rgba(0,0,0,.08)",padding:"6px 6px calc(6px + env(safe-area-inset-bottom))",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
         {[["board","📋","ボード"],["inbox","📥","ストック"],["routines","🔁","ルーティン"],["trash","🗑","ゴミ箱"],["guide","📖","使い方"]].map(([key,icon,label])=>(
-          <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,position:"relative",minHeight:52,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,background:"transparent",border:"none",borderRadius:10,color:tab===key?PINK:"#777",fontSize:10,fontWeight:tab===key?700:500,cursor:"pointer"}}>
-            <span style={{fontSize:20,lineHeight:1}}>{icon}</span><span>{label}</span>
+          <button key={key} onClick={()=>setTab(key)} style={{...FONT_STYLE,position:"relative",minHeight:52,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,background:"transparent",border:"none",borderRadius:10,color:tab===key?PINK:"#777",fontSize:9,fontWeight:tab===key?700:500,cursor:"pointer"}}>
+            <span style={{fontSize:19,lineHeight:1}}>{icon}</span><span>{label}</span>
             {key==="inbox"&&inbox.length>0 && badge(inbox.length,PINK)}
             {key==="trash"&&trash.length>0 && badge(trash.length,"#888")}
           </button>
